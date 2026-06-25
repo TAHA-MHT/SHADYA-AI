@@ -220,4 +220,4 @@ jobs:
           IPA=$(ls ipa/*.ipa | head -n 1)
           xcrun altool --upload-app -t ios -f "$IPA" \
             --apiKey "$ASC_KEY_ID" \
-            --apiIssuer "$ASC_ISSUER_ID"
+            --apiIssuer "$ASC_ISSUER_ID" 
