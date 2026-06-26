@@ -24,8 +24,6 @@ jobs:
           channel: stable
           cache: true
 
-      
-
       - name: Build APK
         run: |
           flutter pub get
@@ -38,7 +36,7 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
-       - name: Prepare keystore + key.properties
+      - name: Prepare keystore + key.properties
         env:
           STORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
           KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
