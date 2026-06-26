@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "715334318062",
+    "project_id": "dcc-geotrack",
+    "storage_bucket": "dcc-geotrack.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:715334318062:android:ecbb434eec0838561940ff",
+        "android_client_info": {
+          "package_name": "com.dccgeotrack.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCsSFX6mOzmkLn_vC5K_ni6wQ6WWuKM5Qc"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
