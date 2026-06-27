@@ -39,6 +39,12 @@ jobs:
           storeFile=../../../environment/android.keystore
           EOF
 
+      - name: Debug keystore aliases
+        env:
+          STORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
+        run: |
+          keytool -list -v -keystore "$RUNNER_WORKSPACE/environment/android.keystore" -storepass "$STORE_PASSWORD"
+
       - name: Build APK
         run: |
           flutter pub get
