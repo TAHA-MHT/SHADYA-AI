@@ -36,7 +36,7 @@ jobs:
           storePassword=$STORE_PASSWORD
           keyPassword=$KEY_PASSWORD
           keyAlias=$KEY_ALIAS
-          storeFile=../../../environment/android.keystore
+          storeFile=$RUNNER_WORKSPACE/environment/android.keystore
           EOF
 
       - name: Debug keystore aliases
