@@ -211,7 +211,7 @@ class _MainScreenState extends State<MainScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('Traccar Client'),
+        title: Text('DCC GeoTrack'),
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16.0),
