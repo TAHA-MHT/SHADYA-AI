@@ -38,7 +38,11 @@ jobs:
           keyAlias=$KEY_ALIAS
           storeFile=$RUNNER_WORKSPACE/environment/android.keystore
           EOF
-
+      - name: Generate app icons
+        run: |
+          flutter pub get
+          dart run flutter_launcher_icons
+          
       - name: Debug keystore aliases
         env:
           STORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
