@@ -113,7 +113,7 @@ class _MainAppState extends State<MainApp> {
       ),
       darkTheme: ThemeData(
         colorScheme: ColorScheme.fromSeed(
-          seedColor: Colors.green,
+          seedColor: seedColor,
           brightness: Brightness.dark,
         ),
       ),
