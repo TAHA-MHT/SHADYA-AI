@@ -100,21 +100,25 @@ class _MainAppState extends State<MainApp> {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      theme: ThemeData(
-  scaffoldBackgroundColor: Colors.white,
-  colorScheme: ColorScheme.fromSeed(
-    seedColor: const Color(0xFFF15A0B),
-    brightness: Brightness.light,
-  ),
-),
-darkTheme: ThemeData(
-  colorScheme: ColorScheme.fromSeed(
-    seedColor: const Color(0xFFF15A0B),
-    brightness: Brightness.dark,
-  ),
-),
-home: Stack(
+  return MaterialApp(
+    scaffoldMessengerKey: messengerKey,
+    navigatorKey: navigatorKey,
+    localizationsDelegates: AppLocalizations.localizationsDelegates,
+    supportedLocales: AppLocalizations.supportedLocales,
+    theme: ThemeData(
+      scaffoldBackgroundColor: Colors.white,
+      colorScheme: ColorScheme.fromSeed(
+        seedColor: const Color(0xFFF15A0B),
+        brightness: Brightness.light,
+      ),
+    ),
+    darkTheme: ThemeData(
+      colorScheme: ColorScheme.fromSeed(
+        seedColor: const Color(0xFFF15A0B),
+        brightness: Brightness.dark,
+      ),
+    ),
+    home: Stack(
         children: const [
           QuickActionsInitializer(),
           MainScreen(),
