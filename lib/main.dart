@@ -22,14 +22,14 @@ class ShadyaApp extends StatelessWidget {
         useMaterial3: true,
         scaffoldBackgroundColor: Colors.white,
         colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF2E6BE6),
+          seedColor: const Color(0xFFC4E100),
           brightness: Brightness.light,
         ),
       ),
       darkTheme: ThemeData(
         useMaterial3: true,
         colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF2E6BE6),
+          seedColor: const Color(0xFFC4E100),
           brightness: Brightness.dark,
         ),
       ),
