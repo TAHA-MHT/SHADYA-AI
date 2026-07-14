@@ -194,6 +194,7 @@ jobs:
 
   publish-ios:
     needs: build-ios
+    if: false
     runs-on: macos-26
     steps:
       - uses: actions/download-artifact@v5
