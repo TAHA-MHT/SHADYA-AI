@@ -1,39 +1,38 @@
 {
-  "trackingTitle": "Tracking",
-  "settingsTitle": "Settings",
-  "statusTitle": "Logs",
-  "saveButton": "Save",
-  "cancelButton": "Cancel",
-  "okButton": "OK",
-  "locationButton": "Send location",
-  "statusButton": "Show status",
-  "settingsButton": "Change settings",
-  "invalidValue": "Invalid value",
-  "disabledValue": "Disabled",
-  "idLabel": "Device identifier",
-  "urlLabel": "Server URL",
-  "accuracyLabel": "Location accuracy",
-  "highestAccuracyLabel": "Highest",
-  "highAccuracyLabel": "High",
-  "mediumAccuracyLabel": "Medium",
-  "lowAccuracyLabel": "Low",
-  "intervalLabel": "Interval (seconds)",
-  "fastestIntervalLabel": "Fastest interval (seconds)",
-  "distanceLabel": "Distance (meters)",
-  "angleLabel": "Angle (degrees)",
-  "heartbeatLabel": "Stationary heartbeat (seconds)",
-  "bufferLabel": "Offline buffering",
-  "wakelockLabel": "Wake lock",
-  "stopDetectionLabel": "Stop detection",
-  "preferPlatformProvidersLabel": "Use system location",
-  "trackingLabel": "Continuous tracking",
-  "advancedLabel": "Advanced settings",
-  "passwordLabel": "Password",
-  "optimizationMessage": "To ensure reliable tracking, please disable battery optimization for this app.",
-  "passwordError": "Wrong password",
-  "startAction": "Start service",
-  "stopAction": "Stop service",
-  "sosAction": "Send SOS",
-  "disclosureMessage": "This app collects location and activity data in the background and sends it to the configured server.",
-  "configurationMessage": "Apply new configuration?"
+    "appTitle": "Shadya AI",
+    "@appTitle": {
+        "description": "Application name"
+    },
+    "greeting": "Hello, I am Shadya. How can I help you?",
+    "listeningPrompt": "I'm listening...",
+    "tapToSpeak": "Tap to speak",
+    "processingMessage": "One moment, thinking...",
+    "commandNotUnderstood": "Sorry, I didn't understand. Could you repeat that?",
+    "microphonePermissionDenied": "I need access to the microphone to listen to you.",
+    "callAction": "Call",
+    "messageAction": "Send message",
+    "readAction": "Read aloud",
+    "timeAction": "It is {time}",
+    "@timeAction": {
+        "placeholders": {
+            "time": {
+                "type": "String"
+            }
+        }
+    },
+    "batteryAction": "Battery is at {percent} percent",
+    "@batteryAction": {
+        "placeholders": {
+            "percent": {
+                "type": "String"
+            }
+        }
+    },
+    "settingsTitle": "Settings",
+    "languageLabel": "Language",
+    "cancelButton": "Cancel",
+    "okButton": "OK",
+    "confirmAction": "Do you confirm this action?",
+    "actionDone": "It's done.",
+    "actionFailed": "I could not do that, sorry."
 }
