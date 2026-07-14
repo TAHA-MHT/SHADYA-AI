@@ -115,11 +115,13 @@ class _MainAppState extends State<MainApp> {
       onSurfaceVariant: Colors.blue,
     ),
  darkTheme: ThemeData(
-      colorScheme: ColorScheme.fromSeed(
+    colorScheme: ColorScheme.fromSeed(
       seedColor: const Color(0xFFF15A0B),
       brightness: Brightness.dark,
-    ).copyWith(onSurface: Colors.blue),
-  ),
+    ).copyWith(
+      onSurface: Colors.blue,
+      onSurfaceVariant: Colors.blue,
+    ),
    home: Stack(
         children: const [
           QuickActionsInitializer(),
