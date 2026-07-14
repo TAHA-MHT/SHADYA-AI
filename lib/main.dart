@@ -106,13 +106,13 @@ class _MainAppState extends State<MainApp> {
     localizationsDelegates: AppLocalizations.localizationsDelegates,
     supportedLocales: AppLocalizations.supportedLocales,
     theme: ThemeData(
-      scaffoldBackgroundColor: Colors.white,
-      colorScheme: ColorScheme.fromSeed(
-        seedColor: const Color(0xFFF15A0B),
-        brightness: Brightness.light,
-      ),
-    ),
-    darkTheme: ThemeData(
+  scaffoldBackgroundColor: Colors.white,
+  colorScheme: ColorScheme.fromSeed(
+    seedColor: const Color(0xFFF15A0B),
+    brightness: Brightness.light,
+  ).copyWith(onSurface: Colors.blue),
+),
+ darkTheme: ThemeData(
       colorScheme: ColorScheme.fromSeed(
         seedColor: const Color(0xFFF15A0B),
         brightness: Brightness.dark,
