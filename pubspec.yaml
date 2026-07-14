@@ -1,7 +1,7 @@
-name: traccar_client
-description: "DCC GeoTrack Client"
+name: shadya_ai
+description: "Shadya AI - Assistant vocal pour personnes analphabètes et malvoyantes"
 publish_to: 'none'
-version: 10.0.0+140
+version: 1.0.0+1
 
 environment:
   sdk: ^3.7.2
@@ -12,20 +12,11 @@ dependencies:
   flutter_localizations:
     sdk: flutter
   intl: any
-  traccar_client_sdk: ^0.0.25
   shared_preferences: ^2.5.5
-  firebase_core: 4.11.0
-  firebase_messaging: 16.4.1
-  firebase_analytics: 12.4.3
-  firebase_crashlytics: 5.2.4
-  quick_actions: ^1.1.0
-  rate_my_app: ^2.4.0
-  shared_preferences_android: ^2.4.23
-  mobile_scanner: ^7.2.0
-  flutter_secure_storage: ^10.2.0
-  app_links: ^7.0.0
-  app_settings: ^7.0.0
-  share_plus: ^13.1.0
+  speech_to_text: ^7.0.0
+  flutter_tts: ^4.2.0
+  permission_handler: ^11.3.1
+  url_launcher: ^6.3.1
 
 dev_dependencies:
   flutter_test:
