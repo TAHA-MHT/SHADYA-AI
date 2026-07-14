@@ -111,12 +111,13 @@ class _MainAppState extends State<MainApp> {
           brightness: Brightness.light,
         ),
       ),
-      darkTheme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFFF15A0B),
-          brightness: Brightness.dark,
-        ),
-      ),
+      theme: ThemeData(
+  scaffoldBackgroundColor: Colors.white,
+  colorScheme: ColorScheme.fromSeed(
+    seedColor: const Color(0xFFF15A0B),
+    brightness: Brightness.light,
+  ),
+),  
       home: Stack(
         children: const [
           QuickActionsInitializer(),
