@@ -100,31 +100,43 @@ class _MainAppState extends State<MainApp> {
 
   @override
   Widget build(BuildContext context) {
-  return MaterialApp(
-    scaffoldMessengerKey: messengerKey,
-    navigatorKey: navigatorKey,
-    localizationsDelegates: AppLocalizations.localizationsDelegates,
-    supportedLocales: AppLocalizations.supportedLocales,
-    theme: ThemeData(
-  scaffoldBackgroundColor: Colors.white,
-  colorScheme: ColorScheme.fromSeed(
-      seedColor: const Color(0xFFF15A0B),
-      brightness: Brightness.light,
-    ).copyWith(
-      onSurface: Colors.blue,
-      onSurfaceVariant: Colors.blue,
-    ),
- ),
- darkTheme: ThemeData(
-    colorScheme: ColorScheme.fromSeed(
-      seedColor: const Color(0xFFF15A0B),
-      brightness: Brightness.dark,
-    ).copyWith(
-      onSurface: Colors.blue,
-      onSurfaceVariant: Colors.blue,
-),
-   ),
-   home: Stack(
+    return MaterialApp(
+      scaffoldMessengerKey: messengerKey,
+      navigatorKey: navigatorKey,
+      localizationsDelegates: AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
+      theme: ThemeData(
+        scaffoldBackgroundColor: Colors.white,
+        switchTheme: SwitchThemeData(
+          thumbColor: WidgetStateProperty.all(const Color(0xFFF15A0B)),
+          trackColor: WidgetStateProperty.all(
+              const Color(0xFFF15A0B).withOpacity(0.3)),
+        ),
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: const Color(0xFFF15A0B),
+          brightness: Brightness.light,
+        ).copyWith(
+          onSurface: Colors.blue,
+          onSurfaceVariant: Colors.blue,
+          onSecondaryContainer: Colors.blue,
+        ),
+      ),
+      darkTheme: ThemeData(
+        switchTheme: SwitchThemeData(
+          thumbColor: WidgetStateProperty.all(const Color(0xFFF15A0B)),
+          trackColor: WidgetStateProperty.all(
+              const Color(0xFFF15A0B).withOpacity(0.3)),
+        ),
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: const Color(0xFFF15A0B),
+          brightness: Brightness.dark,
+        ).copyWith(
+          onSurface: Colors.blue,
+          onSurfaceVariant: Colors.blue,
+          onSecondaryContainer: Colors.blue,
+        ),
+      ),
+      home: Stack(
         children: const [
           QuickActionsInitializer(),
           MainScreen(),
