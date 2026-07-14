@@ -114,6 +114,7 @@ class _MainAppState extends State<MainApp> {
       onSurface: Colors.blue,
       onSurfaceVariant: Colors.blue,
     ),
+ ),
  darkTheme: ThemeData(
     colorScheme: ColorScheme.fromSeed(
       seedColor: const Color(0xFFF15A0B),
