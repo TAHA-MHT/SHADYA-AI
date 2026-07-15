@@ -71,7 +71,12 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
         },
       );
       setState(() {});
-      await _speak(AppLocalizations.of(context)!.greeting);
+      // Petit délai pour laisser l'application s'initialiser avant de saluer
+      Future.delayed(const Duration(milliseconds: 500), () async {
+        if (mounted) {
+          await _speak(AppLocalizations.of(context)!.greeting);
+        }
+      });
     } else {
       setState(() {});
     }
@@ -81,6 +86,29 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
     await _tts.setLanguage('fr-FR');
     await _tts.setSpeechRate(0.5);
     await _tts.speak(text);
+  }
+
+  // Nouvelle fonction pour analyser ce que tu dis et y répondre vocalement
+  void _analyserEtRepondre(String texteEntendu) async {
+    if (texteEntendu.trim().isEmpty) return;
+
+    String reponse = "Je ne suis pas sûre de vous avoir compris.";
+    String texteMinuscule = texteEntendu.toLowerCase();
+
+    // Logique de test simple (Shadya répond en français)
+    if (texteMinuscule.contains("bonjour") || texteMinuscule.contains("allô") || texteMinuscule.contains("allo")) {
+      reponse = "Bonjour ! Comment puis-je t'aider aujourd'hui ?";
+    } else if (texteMinuscule.contains("comment tu vas") || texteMinuscule.contains("ça va")) {
+      reponse = "Je vais super bien, merci de demander ! Et toi ?";
+    } else if (texteMinuscule.contains("qui es-tu") || texteMinuscule.contains("ton nom")) {
+      reponse = "Je suis Shadya, ton assistante vocale personnelle.";
+    }
+
+    // Affiche la réponse à l'écran puis la prononce à haute voix !
+    setState(() {
+      _recognizedText = "Shadya : $reponse";
+    });
+    await _speak(reponse);
   }
 
   void _toggleListening() async {
@@ -98,9 +126,19 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
       });
       await _speech.listen(
         onResult: (result) {
-          setState(() => _recognizedText = result.recognizedWords);
+          setState(() {
+            _recognizedText = result.recognizedWords;
+          });
+          
+          // result.finalResult est "true" quand le téléphone détecte que tu as fini de parler !
+          if (result.finalResult) {
+            setState(() => _isListening = false);
+            _analyserEtRepondre(result.recognizedWords);
+          }
         },
         localeId: 'fr_FR',
+        listenFor: const Duration(seconds: 30),
+        pauseFor: const Duration(seconds: 3), // S'arrête si tu ne parles plus pendant 3 secondes
       );
     }
   }
