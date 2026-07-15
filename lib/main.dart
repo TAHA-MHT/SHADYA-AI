@@ -50,8 +50,8 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
   final stt.SpeechToText _speech = stt.SpeechToText();
   final FlutterTts _tts = FlutterTts();
   
-  AQ.Ab8RN6IofW2PyvD05jvj6UsFxZ9ggRGmP0TiNu5pNWz69hmEHw
-  final String _geminiApiKey = "METS_TA_CLE_API_ICI"; 
+  
+  final String _geminiApiKey = AQ.Ab8RN6IofW2PyvD05jvj6UsFxZ9ggRGmP0TiNu5pNWz69hmEHw
   late final GenerativeModel _model;
 
   bool _speechEnabled = false;
