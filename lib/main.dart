@@ -46,17 +46,18 @@ class VoiceHomeScreen extends StatefulWidget {
   State<VoiceHomeScreen> createState() => _VoiceHomeScreenState();
 }
 
-class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
+  class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
   final stt.SpeechToText _speech = stt.SpeechToText();
   final FlutterTts _tts = FlutterTts();
-  
+
   AQ.Ab8RN6IofW2PyvD05jvj6UsFxZ9ggRGmP0TiNu5pNWz69hmEHw
-  final String _geminiApiKey = "TON_API_KEY_ICI"; 
+  final String _geminiApiKey = "ICI_METS_TA_CLE_API_SANS_RIEN_AUTOUR"; 
   late final GenerativeModel _model;
 
   bool _speechEnabled = false;
   bool _isListening = false;
   String _recognizedText = '';
+
 
   @override
   void initState() {
