@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'package:google_generative_ai/google_generative_ai.dart'; // Importation de l'IA
+import 'package:google_generative_ai/google_generative_ai.dart';
 
 import 'l10n/app_localizations.dart';
 
@@ -46,28 +46,25 @@ class VoiceHomeScreen extends StatefulWidget {
   State<VoiceHomeScreen> createState() => _VoiceHomeScreenState();
 }
 
-  class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
+class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
   final stt.SpeechToText _speech = stt.SpeechToText();
   final FlutterTts _tts = FlutterTts();
-
+  
   AQ.Ab8RN6IofW2PyvD05jvj6UsFxZ9ggRGmP0TiNu5pNWz69hmEHw
-  final String _geminiApiKey = "ICI_METS_TA_CLE_API_SANS_RIEN_AUTOUR"; 
+  final String _geminiApiKey = "METS_TA_CLE_API_ICI"; 
   late final GenerativeModel _model;
 
   bool _speechEnabled = false;
   bool _isListening = false;
   String _recognizedText = '';
 
-
   @override
   void initState() {
     super.initState();
-    // Initialisation du modèle Gemini (on utilise gemini-1.5-flash, rapide et gratuit)
     _model = GenerativeModel(
       model: 'gemini-1.5-flash', 
       apiKey: _geminiApiKey,
       generationConfig: GenerationConfig(
-        // On demande à l'IA d'être concise pour que les réponses vocales ne soient pas trop longues
         maxOutputTokens: 100, 
       ),
     );
@@ -98,11 +95,11 @@ class VoiceHomeScreen extends StatefulWidget {
 
   Future<void> _speak(String text) async {
     await _tts.setLanguage('fr-FR');
+    await _tts.setSpreadVolume(1.0);
     await _tts.setSpeechRate(0.5);
     await _tts.speak(text);
   }
 
-  // Cette fonction interroge désormais l'IA Gemini en direct !
   void _analyserEtRepondre(String texteEntendu) async {
     if (texteEntendu.trim().isEmpty) return;
 
@@ -111,7 +108,6 @@ class VoiceHomeScreen extends StatefulWidget {
     });
 
     try {
-      // Nous donnons des consignes de personnalité à l'IA avant de lui poser la question
       final promptInstructions = 
           "Tu es Shadya, une assistante vocale chaleureuse et serviable. "
           "Réponds de manière amicale, naturelle et très courte (maximum 2 phrases). "
@@ -125,7 +121,6 @@ class VoiceHomeScreen extends StatefulWidget {
         _recognizedText = "Shadya : $reponseIA";
       });
       
-      // Fait lire la réponse de l'IA par le haut-parleur !
       await _speak(reponseIA);
 
     } catch (e) {
@@ -162,8 +157,6 @@ class VoiceHomeScreen extends StatefulWidget {
           }
         },
         localeId: 'fr_FR',
-        listenFor: const Duration(seconds: 30),
-        pauseFor: const Duration(seconds: 3),
       );
     }
   }
