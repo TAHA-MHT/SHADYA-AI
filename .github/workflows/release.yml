@@ -46,9 +46,18 @@ jobs:
           keyAlias=$KEY_ALIAS
           storeFile=../../../environment/android.keystore
           EOF
+      - name: Debug keystore file
+          run: |
+           echo "Vérification du fichier keystore préparé :"
+           ls -la "$RUNNER_WORKSPACE/environment/"
+           echo "SHA256 du fichier décodé :"
+           sha256sum "$RUNNER_WORKSPACE/environment/android.keystore"
+           echo "Attendu : c4cf778df8285cef3a786915976e06f4d990679e8cf8c4f46553e6941430578"
+           echo "Contenu de key.properties (mots de passe masqués) :"
+           sed 's/=.*/=***/' "$RUNNER_WORKSPACE/environment/key.properties"
 
       - name: Build APK
-        run: |
+              run: |
           flutter pub get
           flutter build apk --release
 
