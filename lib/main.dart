@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:google_generative_ai/google_generative_ai.dart'; // Importation de l'IA
 
 import 'l10n/app_localizations.dart';
 
@@ -48,6 +49,10 @@ class VoiceHomeScreen extends StatefulWidget {
 class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
   final stt.SpeechToText _speech = stt.SpeechToText();
   final FlutterTts _tts = FlutterTts();
+  
+  AQ.Ab8RN6IofW2PyvD05jvj6UsFxZ9ggRGmP0TiNu5pNWz69hmEHw
+  final String _geminiApiKey = "TON_API_KEY_ICI"; 
+  late final GenerativeModel _model;
 
   bool _speechEnabled = false;
   bool _isListening = false;
@@ -56,6 +61,15 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
   @override
   void initState() {
     super.initState();
+    // Initialisation du modèle Gemini (on utilise gemini-1.5-flash, rapide et gratuit)
+    _model = GenerativeModel(
+      model: 'gemini-1.5-flash', 
+      apiKey: _geminiApiKey,
+      generationConfig: GenerationConfig(
+        // On demande à l'IA d'être concise pour que les réponses vocales ne soient pas trop longues
+        maxOutputTokens: 100, 
+      ),
+    );
     _initAssistant();
   }
 
@@ -71,7 +85,6 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
         },
       );
       setState(() {});
-      // Petit délai pour laisser l'application s'initialiser avant de saluer
       Future.delayed(const Duration(milliseconds: 500), () async {
         if (mounted) {
           await _speak(AppLocalizations.of(context)!.greeting);
@@ -88,27 +101,39 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
     await _tts.speak(text);
   }
 
-  // Nouvelle fonction pour analyser ce que tu dis et y répondre vocalement
+  // Cette fonction interroge désormais l'IA Gemini en direct !
   void _analyserEtRepondre(String texteEntendu) async {
     if (texteEntendu.trim().isEmpty) return;
 
-    String reponse = "Je ne suis pas sûre de vous avoir compris.";
-    String texteMinuscule = texteEntendu.toLowerCase();
-
-    // Logique de test simple (Shadya répond en français)
-    if (texteMinuscule.contains("bonjour") || texteMinuscule.contains("allô") || texteMinuscule.contains("allo")) {
-      reponse = "Bonjour ! Comment puis-je t'aider aujourd'hui ?";
-    } else if (texteMinuscule.contains("comment tu vas") || texteMinuscule.contains("ça va")) {
-      reponse = "Je vais super bien, merci de demander ! Et toi ?";
-    } else if (texteMinuscule.contains("qui es-tu") || texteMinuscule.contains("ton nom")) {
-      reponse = "Je suis Shadya, ton assistante vocale personnelle.";
-    }
-
-    // Affiche la réponse à l'écran puis la prononce à haute voix !
     setState(() {
-      _recognizedText = "Shadya : $reponse";
+      _recognizedText = "Shadya réfléchit...";
     });
-    await _speak(reponse);
+
+    try {
+      // Nous donnons des consignes de personnalité à l'IA avant de lui poser la question
+      final promptInstructions = 
+          "Tu es Shadya, une assistante vocale chaleureuse et serviable. "
+          "Réponds de manière amicale, naturelle et très courte (maximum 2 phrases). "
+          "Voici la question de l'utilisateur : $texteEntendu";
+
+      final content = [Content.text(promptInstructions)];
+      final response = await _model.generateContent(content);
+      final reponseIA = response.text ?? "Je n'ai pas pu formuler de réponse.";
+
+      setState(() {
+        _recognizedText = "Shadya : $reponseIA";
+      });
+      
+      // Fait lire la réponse de l'IA par le haut-parleur !
+      await _speak(reponseIA);
+
+    } catch (e) {
+      debugPrint("Erreur Gemini API: $e");
+      setState(() {
+        _recognizedText = "Désolée, j'ai rencontré un problème de connexion.";
+      });
+      await _speak("Désolée, j'ai rencontré un problème de connexion.");
+    }
   }
 
   void _toggleListening() async {
@@ -130,7 +155,6 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
             _recognizedText = result.recognizedWords;
           });
           
-          // result.finalResult est "true" quand le téléphone détecte que tu as fini de parler !
           if (result.finalResult) {
             setState(() => _isListening = false);
             _analyserEtRepondre(result.recognizedWords);
@@ -138,7 +162,7 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
         },
         localeId: 'fr_FR',
         listenFor: const Duration(seconds: 30),
-        pauseFor: const Duration(seconds: 3), // S'arrête si tu ne parles plus pendant 3 secondes
+        pauseFor: const Duration(seconds: 3),
       );
     }
   }
