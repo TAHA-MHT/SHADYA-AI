@@ -95,7 +95,7 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
 
   Future<void> _speak(String text) async {
     await _tts.setLanguage('fr-FR');
-    await _tts.setSpreadVolume(1.0);
+    await _tts.setVolume(1.0);
     await _tts.setSpeechRate(0.5);
     await _tts.speak(text);
   }
