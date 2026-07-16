@@ -4,7 +4,7 @@ publish_to: 'none'
 version: 1.0.0+1
 
 environment:
-  sdk: ^3.7.2
+  sdk: ^3.5.0
 
 dependencies:
   flutter:
@@ -17,8 +17,8 @@ dependencies:
   flutter_tts: ^4.2.0
   permission_handler: ^11.3.1
   url_launcher: ^6.3.1
-  firebase_core: ^3.8.0
-  firebase_ai: ^0.3.0
+  firebase_core: ^4.4.0
+  firebase_ai: ^3.8.0
 
 dev_dependencies:
   flutter_test:
