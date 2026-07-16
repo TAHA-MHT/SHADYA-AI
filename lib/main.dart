@@ -10,7 +10,11 @@ import 'package:http/http.dart' as http;
 
 import 'l10n/app_localizations.dart';
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  runApp(const MyApp());
+}
   runApp(const ShadyaApp());
 }
 
