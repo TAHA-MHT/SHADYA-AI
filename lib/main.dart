@@ -109,7 +109,7 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
           "Voici la question de l'utilisateur : $texteEntendu";
 
       final url = Uri.parse(
-  'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent',
+  'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=$_geminiApiKey',
 );
 final httpResponse = await http.post(
   url,
