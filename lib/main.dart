@@ -122,7 +122,7 @@ final httpResponse = await http.post(
   }),
 );
 final data = jsonDecode(httpResponse.body);
-final reponseIA = data['candidates']?[0]['content']['parts'][0]['text'] ?? "Je n'ai pas pu formuler de réponse.";
+final reponseIA = data.toString();
       
       
 
