@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'package:google_generative_ai/google_generative_ai.dart';
+import 'dart:convert';
+import 'package:http/http.dart' as http;
 
 import 'l10n/app_localizations.dart';
 
@@ -52,7 +53,7 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
   
   
   final String _geminiApiKey = "AQ.Ab8RN6Im0PzOs-KKCjRFkpUFdayOVn5UaaHRcMFZFGrHAIlRpw";
-  late final GenerativeModel _model;
+  
 
   bool _speechEnabled = false;
   bool _isListening = false;
@@ -61,13 +62,7 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
   @override
   void initState() {
   super.initState();
-  _model = GenerativeModel(
-  model: 'gemini-2.5-flash',
-  apiKey: _geminiApiKey,
-  generationConfig: GenerationConfig(
-        maxOutputTokens: 100, 
-      ),
-    );
+    
     _initAssistant();
   }
 
@@ -113,9 +108,23 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
           "Réponds de manière amicale, naturelle et très courte (maximum 2 phrases). "
           "Voici la question de l'utilisateur : $texteEntendu";
 
-      final content = [Content.text(promptInstructions)];
-      final response = await _model.generateContent(content);
-      final reponseIA = response.text ?? "Je n'ai pas pu formuler de réponse.";
+      final url = Uri.parse(
+  'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=$_geminiApiKey',
+);
+final httpResponse = await http.post(
+  url,
+  headers: {'Content-Type': 'application/json'},
+  body: jsonEncode({
+    'contents': [
+      {'parts': [{'text': promptInstructions}]}
+    ],
+    'generationConfig': {'maxOutputTokens': 100},
+  }),
+);
+final data = jsonDecode(httpResponse.body);
+final reponseIA = data['candidates']?[0]['content']['parts'][0]['text'] ?? "Je n'ai pas pu formuler de réponse.";
+      
+      
 
       setState(() {
         _recognizedText = "Shadya : $reponseIA";
