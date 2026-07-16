@@ -60,11 +60,11 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
 
   @override
   void initState() {
-    super.initState();
-    _model = GenerativeModel(
-      model: 'gemini-1.5-flash', 
-      apiKey: _geminiApiKey,
-      generationConfig: GenerationConfig(
+  super.initState();
+  _model = GenerativeModel(
+  model: 'gemini-3.5-flash', 
+  apiKey: _geminiApiKey,
+  generationConfig: GenerationConfig(
         maxOutputTokens: 100, 
       ),
     );
