@@ -124,11 +124,11 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
       await _speak(reponseIA);
 
     } catch (e) {
-      debugPrint("Erreur Gemini API: $e");
-      setState(() {
-        _recognizedText = "Désolée, j'ai rencontré un problème de connexion.";
-      });
-      await _speak("Désolée, j'ai rencontré un problème de connexion.");
+  debugPrint("Erreur Gemini API: $e");
+  setState(() {
+    _recognizedText = "ERREUR: $e";
+  });
+  await _speak("Erreur détectée, regarde l'écran.");
     }
   }
 
