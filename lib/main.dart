@@ -113,7 +113,10 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
 );
 final httpResponse = await http.post(
   url,
-  headers: {'Content-Type': 'application/json'},
+  headers: {
+  'Content-Type': 'application/json',
+  'x-goog-api-key': _geminiApiKey,
+},
   body: jsonEncode({
     'contents': [
       {'parts': [{'text': promptInstructions}]}
