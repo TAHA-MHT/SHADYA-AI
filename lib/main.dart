@@ -13,8 +13,6 @@ import 'l10n/app_localizations.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
-  runApp(const MyApp());
-}
   runApp(const ShadyaApp());
 }
 
@@ -58,9 +56,7 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
   final stt.SpeechToText _speech = stt.SpeechToText();
   final FlutterTts _tts = FlutterTts();
   
-  
   final String _geminiApiKey = "AQ.Ab8RN6KceaAiFRwpjab83s_MqhOhq34n_MuFAUnKSD6e-L9TaQ";
-  
 
   bool _speechEnabled = false;
   bool _isListening = false;
@@ -68,8 +64,7 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
 
   @override
   void initState() {
-  super.initState();
-    
+    super.initState();
     _initAssistant();
   }
 
@@ -116,25 +111,36 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
           "Voici la question de l'utilisateur : $texteEntendu";
 
       final url = Uri.parse(
-  'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=$_geminiApiKey',
-);
-final httpResponse = await http.post(
-  url,
-  headers: {
-  'Content-Type': 'application/json',
-  'x-goog-api-key': _geminiApiKey,
-},
-  body: jsonEncode({
-    'contents': [
-      {'parts': [{'text': promptInstructions}]}
-    ],
-    'generationConfig': {'maxOutputTokens': 100},
-  }),
-);
-final data = jsonDecode(httpResponse.body);
-final reponseIA = data.toString();
+        'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=$_geminiApiKey',
+      );
       
+      final httpResponse = await http.post(
+        url,
+        headers: {
+          'Content-Type': 'application/json',
+          'x-goog-api-key': _geminiApiKey,
+        },
+        body: jsonEncode({
+          'contents': [
+            {'parts': [{'text': promptInstructions}]}
+          ],
+          'generationConfig': {'maxOutputTokens': 100},
+        }),
+      );
+
+      final data = jsonDecode(httpResponse.body);
       
+      String reponseIA = "Je n'ai pas pu formuler de réponse.";
+      
+      // Extraction propre du texte de la réponse JSON de Gemini
+      if (data['candidates'] != null && data['candidates'].isNotEmpty) {
+        final candidate = data['candidates'][0];
+        if (candidate['content'] != null && candidate['content']['parts'] != null) {
+          reponseIA = candidate['content']['parts'][0]['text'] ?? reponseIA;
+        }
+      } else if (data['error'] != null) {
+        reponseIA = "Erreur Google API : ${data['error']['message']}";
+      }
 
       setState(() {
         _recognizedText = "Shadya : $reponseIA";
@@ -143,11 +149,11 @@ final reponseIA = data.toString();
       await _speak(reponseIA);
 
     } catch (e) {
-  debugPrint("Erreur Gemini API: $e");
-  setState(() {
-    _recognizedText = "ERREUR: $e";
-  });
-  await _speak("Erreur détectée, regarde l'écran.");
+      debugPrint("Erreur Gemini API: $e");
+      setState(() {
+        _recognizedText = "ERREUR: $e";
+      });
+      await _speak("Désolée, j'ai rencontré un problème.");
     }
   }
 
