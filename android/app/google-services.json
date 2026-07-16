@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "234051740515",
+    "project_id": "shadya-ai",
+    "storage_bucket": "shadya-ai.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:234051740515:android:3078ab711e300eaf36a956",
+        "android_client_info": {
+          "package_name": "com.shadyaai.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCQMnvrl5GJ6eD3RLaEEakJjrEIfC1zSlo"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
