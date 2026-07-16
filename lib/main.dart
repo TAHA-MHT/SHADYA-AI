@@ -52,7 +52,7 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
   final FlutterTts _tts = FlutterTts();
   
   
-  final String _geminiApiKey = "AQ.Ab8RN6Im0PzOs-KKCjRFkpUFdayOVn5UaaHRcMFZFGrHAIlRpw";
+  final String _geminiApiKey = "AQ.Ab8RN6KceaAiFRwpjab83s_MqhOhq34n_MuFAUnKSD6e-L9TaQ";
   
 
   bool _speechEnabled = false;
