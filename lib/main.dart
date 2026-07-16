@@ -1,17 +1,18 @@
-import 'package:firebase_core/firebase_core.dart';
-import 'firebase_options.dart';
 import 'package:flutter/material.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_ai/firebase_ai.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'dart:convert';
-import 'package:http/http.dart' as http;
 
+import 'firebase_options.dart';
 import 'l10n/app_localizations.dart';
 
-void main() async {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
   runApp(const ShadyaApp());
 }
 
@@ -54,8 +55,8 @@ class VoiceHomeScreen extends StatefulWidget {
 class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
   final stt.SpeechToText _speech = stt.SpeechToText();
   final FlutterTts _tts = FlutterTts();
-  
-  final String _geminiApiKey = "AQ.Ab8RN6KceaAiFRwpjab83s_MqhOhq34n_MuFAUnKSD6e-L9TaQ";
+
+  late final GenerativeModel _model;
 
   bool _speechEnabled = false;
   bool _isListening = false;
@@ -64,6 +65,10 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
   @override
   void initState() {
     super.initState();
+    _model = FirebaseAI.googleAI().generativeModel(
+      model: 'gemini-2.5-flash',
+      generationConfig: GenerationConfig(maxOutputTokens: 100),
+    );
     _initAssistant();
   }
 
@@ -104,55 +109,26 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
     });
 
     try {
-      final promptInstructions = 
+      final promptInstructions =
           "Tu es Shadya, une assistante vocale chaleureuse et serviable. "
           "Réponds de manière amicale, naturelle et très courte (maximum 2 phrases). "
           "Voici la question de l'utilisateur : $texteEntendu";
 
-      final url = Uri.parse(
-        'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=$_geminiApiKey',
-      );
-      
-      final httpResponse = await http.post(
-        url,
-        headers: {
-          'Content-Type': 'application/json',
-          'x-goog-api-key': _geminiApiKey,
-        },
-        body: jsonEncode({
-          'contents': [
-            {'parts': [{'text': promptInstructions}]}
-          ],
-          'generationConfig': {'maxOutputTokens': 100},
-        }),
-      );
-
-      final data = jsonDecode(httpResponse.body);
-      
-      String reponseIA = "Je n'ai pas pu formuler de réponse.";
-      
-      // Extraction propre du texte de la réponse JSON de Gemini
-      if (data['candidates'] != null && data['candidates'].isNotEmpty) {
-        final candidate = data['candidates'][0];
-        if (candidate['content'] != null && candidate['content']['parts'] != null) {
-          reponseIA = candidate['content']['parts'][0]['text'] ?? reponseIA;
-        }
-      } else if (data['error'] != null) {
-        reponseIA = "Erreur Google API : ${data['error']['message']}";
-      }
+      final content = [Content.text(promptInstructions)];
+      final response = await _model.generateContent(content);
+      final reponseIA = response.text ?? "Je n'ai pas pu formuler de réponse.";
 
       setState(() {
         _recognizedText = "Shadya : $reponseIA";
       });
-      
-      await _speak(reponseIA);
 
+      await _speak(reponseIA);
     } catch (e) {
       debugPrint("Erreur Gemini API: $e");
       setState(() {
         _recognizedText = "ERREUR: $e";
       });
-      await _speak("Désolée, j'ai rencontré un problème.");
+      await _speak("Erreur détectée, regarde l'écran.");
     }
   }
 
@@ -174,7 +150,7 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
           setState(() {
             _recognizedText = result.recognizedWords;
           });
-          
+
           if (result.finalResult) {
             setState(() => _isListening = false);
             _analyserEtRepondre(result.recognizedWords);
