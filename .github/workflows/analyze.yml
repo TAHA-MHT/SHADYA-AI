@@ -12,5 +12,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.44.0'
       - run: flutter pub get
       - run: flutter analyze --no-fatal-infos
