@@ -50,8 +50,17 @@ jobs:
       - name: Build APK
         run: |
           flutter pub get
-          flutter build apk --release
-          
+          flutter build apk --release --verbose > build_log.txt 2>&1 || true
+          tail -200 build_log.txt
+
+      - name: Upload full build log
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: full-build-log
+          path: build_log.txt
+          retention-days: 1
+        
       - name: Debug - list build outputs
         run: find build -iname "*.apk" -o -iname "*.aab" 2>/dev/null || echo "Nothing found in build/"
           
