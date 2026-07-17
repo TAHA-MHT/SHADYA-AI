@@ -50,10 +50,8 @@ jobs:
       - name: Build APK
         run: |
           flutter pub get
-          cd android
-          chmod +x gradlew
-          ./gradlew assembleRelease --stacktrace
-
+          flutter build apk --release --verbose 2>&1 | tail -100
+          
       - uses: actions/upload-artifact@v5
         with:
           name: android-apk
