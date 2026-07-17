@@ -64,8 +64,8 @@ jobs:
       - name: Debug - list build outputs
         run: find build -iname "*.apk" -o -iname "*.aab" 2>/dev/null || echo "Nothing found in build/"
           
-     - uses: actions/upload-artifact@v5
-      with:
+      - uses: actions/upload-artifact@v5
+        with:
           name: android-apk
           path: android/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
