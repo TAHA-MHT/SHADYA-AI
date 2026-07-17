@@ -52,6 +52,9 @@ jobs:
           flutter pub get
           flutter build apk --release --verbose 2>&1 | tail -100
           
+      - name: Debug - list build outputs
+        run: find build -iname "*.apk" -o -iname "*.aab" 2>/dev/null || echo "Nothing found in build/"
+          
       - uses: actions/upload-artifact@v5
         with:
           name: android-apk
