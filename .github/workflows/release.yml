@@ -51,6 +51,8 @@ jobs:
         run: |
           flutter pub get
           flutter build apk --release
+          cd android
+          ./gradlew assembleRelease --stacktrace
 
       - uses: actions/upload-artifact@v5
         with:
