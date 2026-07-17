@@ -62,9 +62,15 @@ jobs:
       - uses: actions/upload-artifact@v5
         with:
           name: android-apk
-          path: build/app/outputs/flutter-apk/*.apk
+          path: android/app/build/outputs/flutter-apk/app-release.apk
           if-no-files-found: error
           retention-days: 1
+
+        
+          
+          
+          
+          
 
         
           
