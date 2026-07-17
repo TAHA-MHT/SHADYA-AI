@@ -28,7 +28,7 @@ jobs:
 
       - uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.32.0'
+          flutter-version: '3.35.0'
           cache: false
 
       - name: Prepare keystore + key.properties
@@ -124,7 +124,7 @@ jobs:
 
       - uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.32.0'
+          flutter-version: '3.35.0'
           cache: false
 
       - name: Install flutterfire CLI
