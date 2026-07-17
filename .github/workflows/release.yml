@@ -50,7 +50,6 @@ jobs:
       - name: Build APK
         run: |
           flutter pub get
-          flutter build apk --release
           cd android
           ./gradlew assembleRelease --stacktrace
 
