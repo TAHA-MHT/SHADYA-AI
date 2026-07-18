@@ -42,6 +42,16 @@ jobs:
           storeFile=$RUNNER_WORKSPACE/environment/android.keystore
           EOF
 
+      - name: Print SHA-256 fingerprint
+        env:
+          STORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+        run: |
+          keytool -list -v \
+            -keystore "$RUNNER_WORKSPACE/environment/android.keystore" \
+            -alias "$KEY_ALIAS" \
+            -storepass "$STORE_PASSWORD" | grep -A1 "SHA256"
+
       - name: Build APK
         run: |
           flutter pub get
