@@ -66,7 +66,7 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
   void initState() {
     super.initState();
     _model = FirebaseAI.googleAI().generativeModel(
-      model: 'gemini-2.5-flash',
+      model: 'gemini-3.5-flash',
       generationConfig: GenerationConfig(maxOutputTokens: 100),
     );
     _initAssistant();
