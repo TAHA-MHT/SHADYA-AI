@@ -17,6 +17,9 @@ Future<void> main() async {
   await FirebaseAppCheck.instance.activate(
   androidProvider: AndroidProvider.debug,
 );
+  FirebaseAppCheck.instance.onTokenChange.listen((token) {
+  debugPrint('=== APP CHECK TOKEN: $token ===');
+});
   runApp(const ShadyaApp());
 }
 
