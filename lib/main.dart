@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_ai/firebase_ai.dart';
@@ -67,6 +68,7 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
   bool _isListening = false;
   String _recognizedText = '';
   String? _appCheckToken;
+  String _debugSecretInfo = 'Tape sur "Afficher secret debug" ci-dessous';
 
   @override
   void initState() {
@@ -91,6 +93,30 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
       generationConfig: GenerationConfig(maxOutputTokens: 100),
     );
     _initAssistant();
+  }
+
+  Future<void> _fetchDebugSecret() async {
+    setState(() {
+      _debugSecretInfo = 'Recherche en cours...';
+    });
+    try {
+      final result = await Process.run('logcat', ['-d']);
+      final output = result.stdout.toString();
+      final lines = output.split('\n');
+      final secretLine = lines.firstWhere(
+        (l) => l.toLowerCase().contains('debug secret'),
+        orElse: () => '',
+      );
+      setState(() {
+        _debugSecretInfo = secretLine.isEmpty
+            ? 'Pas encore trouvé. Ferme et rouvre complètement l\'app, puis retape ici.'
+            : secretLine;
+      });
+    } catch (e) {
+      setState(() {
+        _debugSecretInfo = 'Erreur lecture logs: $e';
+      });
+    }
   }
 
   Future<void> _initAssistant() async {
@@ -187,56 +213,73 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
     final loc = AppLocalizations.of(context)!;
     return Scaffold(
       body: SafeArea(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Text(
-              loc.appTitle,
-              style: Theme.of(context).textTheme.headlineMedium,
-            ),
-            const SizedBox(height: 24),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 32),
-              child: Text(
-                _isListening
-                    ? loc.listeningPrompt
-                    : (_recognizedText.isEmpty
-                        ? loc.tapToSpeak
-                        : _recognizedText),
-                textAlign: TextAlign.center,
-                style: Theme.of(context).textTheme.titleLarge,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const SizedBox(height: 24),
+              Text(
+                loc.appTitle,
+                style: Theme.of(context).textTheme.headlineMedium,
               ),
-            ),
-            const SizedBox(height: 24),
-            if (_appCheckToken != null)
+              const SizedBox(height: 24),
               Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
+                padding: const EdgeInsets.symmetric(horizontal: 32),
+                child: Text(
+                  _isListening
+                      ? loc.listeningPrompt
+                      : (_recognizedText.isEmpty
+                          ? loc.tapToSpeak
+                          : _recognizedText),
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
+              ),
+              const SizedBox(height: 24),
+              if (_appCheckToken != null)
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: SelectableText(
+                    'TOKEN: $_appCheckToken',
+                    style: const TextStyle(fontSize: 10),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              const SizedBox(height: 16),
+              ElevatedButton(
+                onPressed: _fetchDebugSecret,
+                child: const Text('Afficher secret debug'),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                 child: SelectableText(
-                  'TOKEN: $_appCheckToken',
-                  style: const TextStyle(fontSize: 10),
+                  _debugSecretInfo,
+                  style: const TextStyle(fontSize: 11),
                   textAlign: TextAlign.center,
                 ),
               ),
-            const SizedBox(height: 24),
-            GestureDetector(
-              onTap: _toggleListening,
-              child: Container(
-                width: 140,
-                height: 140,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: _isListening
-                      ? Theme.of(context).colorScheme.error
-                      : Theme.of(context).colorScheme.primary,
-                ),
-                child: const Icon(
-                  Icons.mic,
-                  color: Colors.white,
-                  size: 64,
+              const SizedBox(height: 24),
+              GestureDetector(
+                onTap: _toggleListening,
+                child: Container(
+                  width: 140,
+                  height: 140,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: _isListening
+                        ? Theme.of(context).colorScheme.error
+                        : Theme.of(context).colorScheme.primary,
+                  ),
+                  child: const Icon(
+                    Icons.mic,
+                    color: Colors.white,
+                    size: 64,
+                  ),
                 ),
               ),
-            ),
-          ],
+              const SizedBox(height: 24),
+            ],
+          ),
         ),
       ),
     );
