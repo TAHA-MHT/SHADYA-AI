@@ -33,8 +33,9 @@
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data
-            android:name="flutterEmbedding"
-            android:value="2" />
+            android:name="firebase_app_check_debug_secret"
+            android:value="a1b2c3d4-e5f6-4789-a012-3456789abcde" />
+            
     </application>
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and
