@@ -72,14 +72,33 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
   @override
   void initState() {
     super.initState();
+    FirebaseAppCheck.instance.onTokenChange.listen((token) {
+      if (token != null && mounted) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          showDialog(
+            context: context,
+            builder: (context) => AlertDialog(
+              title: const Text('APP CHECK TOKEN'),
+              content: SelectableText(token),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('OK'),
+                ),
+              ],
+            ),
+          );
+        });
+      }
+    });
     _model = FirebaseAI.googleAI().generativeModel(
       model: 'gemini-3.5-flash',
       generationConfig: GenerationConfig(maxOutputTokens: 100),
     );
     _initAssistant();
   }
-
-  Future<void> _initAssistant() async {
+  
+    Future<void> _initAssistant() async {
     final micStatus = await Permission.microphone.request();
     if (micStatus.isGranted) {
       _speechEnabled = await _speech.initialize(
