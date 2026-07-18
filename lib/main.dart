@@ -15,9 +15,9 @@ Future<void> main() async {
     options: DefaultFirebaseOptions.currentPlatform,
   );
   await FirebaseAppCheck.instance.activate(
-  androidProvider: AndroidProvider.debug,
-);
-  
+    androidProvider: AndroidProvider.debug,
+  );
+
   runApp(const ShadyaApp());
 }
 
@@ -66,20 +66,26 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
   bool _speechEnabled = false;
   bool _isListening = false;
   String _recognizedText = '';
-    String? _appCheckToken;
+  String? _appCheckToken;
 
   @override
   void initState() {
     super.initState();
-  
-   _model = FirebaseAI.googleAI().generativeModel(
+
+    FirebaseAppCheck.instance.onTokenChange.listen((token) {
+      setState(() {
+        _appCheckToken = token;
+      });
+    });
+
+    _model = FirebaseAI.googleAI().generativeModel(
       model: 'gemini-3.5-flash',
       generationConfig: GenerationConfig(maxOutputTokens: 100),
     );
     _initAssistant();
   }
-  
-    Future<void> _initAssistant() async {
+
+  Future<void> _initAssistant() async {
     final micStatus = await Permission.microphone.request();
     if (micStatus.isGranted) {
       _speechEnabled = await _speech.initialize(
@@ -193,7 +199,17 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
                 style: Theme.of(context).textTheme.titleLarge,
               ),
             ),
-            const SizedBox(height: 48),
+            const SizedBox(height: 24),
+            if (_appCheckToken != null)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: SelectableText(
+                  'TOKEN: $_appCheckToken',
+                  style: const TextStyle(fontSize: 10),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            const SizedBox(height: 24),
             GestureDetector(
               onTap: _toggleListening,
               child: Container(
