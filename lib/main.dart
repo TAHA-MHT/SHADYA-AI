@@ -66,6 +66,7 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
   bool _speechEnabled = false;
   bool _isListening = false;
   String _recognizedText = '';
+    String? _appCheckToken;
 
   @override
   void initState() {
