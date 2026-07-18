@@ -17,9 +17,7 @@ Future<void> main() async {
   await FirebaseAppCheck.instance.activate(
   androidProvider: AndroidProvider.debug,
 );
-  FirebaseAppCheck.instance.onTokenChange.listen((token) {
-  debugPrint('=== APP CHECK TOKEN: $token ===');
-});
+  
   runApp(const ShadyaApp());
 }
 
@@ -72,26 +70,8 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
   @override
   void initState() {
     super.initState();
-    FirebaseAppCheck.instance.onTokenChange.listen((token) {
-      if (token != null && mounted) {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          showDialog(
-            context: context,
-            builder: (context) => AlertDialog(
-              title: const Text('APP CHECK TOKEN'),
-              content: SelectableText(token),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text('OK'),
-                ),
-              ],
-            ),
-          );
-        });
-      }
-    });
-    _model = FirebaseAI.googleAI().generativeModel(
+  
+   _model = FirebaseAI.googleAI().generativeModel(
       model: 'gemini-3.5-flash',
       generationConfig: GenerationConfig(maxOutputTokens: 100),
     );
