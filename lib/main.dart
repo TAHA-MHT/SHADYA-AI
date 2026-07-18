@@ -72,10 +72,18 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
   void initState() {
     super.initState();
 
-    FirebaseAppCheck.instance.onTokenChange.listen((token) {
-      setState(() {
-        _appCheckToken = token;
-      });
+    FirebaseAppCheck.instance.getToken(true).then((token) {
+      if (mounted) {
+        setState(() {
+          _appCheckToken = token;
+        });
+      }
+    }).catchError((e) {
+      if (mounted) {
+        setState(() {
+          _appCheckToken = 'Erreur récupération token: $e';
+        });
+      }
     });
 
     _model = FirebaseAI.googleAI().generativeModel(
