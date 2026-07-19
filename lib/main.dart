@@ -5,6 +5,7 @@ import 'package:firebase_ai/firebase_ai.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
 
 import 'package:firebase_app_check/firebase_app_check.dart';
 import 'firebase_options.dart';
@@ -70,6 +71,60 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
   String? _debugSecretInfo;
   bool _showDebugPanel = false;
 
+  // Liste des commandes locales (mot-clés -> réponse), fonctionne sans internet
+  final List<Map<String, dynamic>> _commandesLocales = [
+    {
+      'motsCles': ['lumière', 'lumiere'],
+      'action': 'allume',
+      'reponse': "D'accord, j'allume la lumière.",
+    },
+    {
+      'motsCles': ['lumière', 'lumiere'],
+      'action': 'éteins',
+      'reponse': "D'accord, j'éteins la lumière.",
+    },
+    {
+      'motsCles': ['climatiseur', 'clim'],
+      'action': 'allume',
+      'reponse': "D'accord, j'allume le climatiseur.",
+    },
+    {
+      'motsCles': ['climatiseur', 'clim'],
+      'action': 'éteins',
+      'reponse': "D'accord, j'éteins le climatiseur.",
+    },
+    {
+      'motsCles': ['ventilateur'],
+      'action': 'allume',
+      'reponse': "D'accord, j'allume le ventilateur.",
+    },
+    {
+      'motsCles': ['ventilateur'],
+      'action': 'éteins',
+      'reponse': "D'accord, j'éteins le ventilateur.",
+    },
+    {
+      'motsCles': ['télévision', 'television', 'télé', 'tele'],
+      'action': 'allume',
+      'reponse': "D'accord, j'allume la télévision.",
+    },
+    {
+      'motsCles': ['télévision', 'television', 'télé', 'tele'],
+      'action': 'éteins',
+      'reponse': "D'accord, j'éteins la télévision.",
+    },
+    {
+      'motsCles': ['radio'],
+      'action': 'allume',
+      'reponse': "D'accord, j'allume la radio.",
+    },
+    {
+      'motsCles': ['radio'],
+      'action': 'éteins',
+      'reponse': "D'accord, j'éteins la radio.",
+    },
+  ];
+
   @override
   void initState() {
     super.initState();
@@ -110,6 +165,26 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
     }
   }
 
+  Future<bool> _estConnecte() async {
+    final connectivityResult = await Connectivity().checkConnectivity();
+    return !connectivityResult.contains(ConnectivityResult.none);
+  }
+
+  // Cherche une commande locale correspondant au texte entendu
+  String? _chercherCommandeLocale(String texte) {
+    final texteMinuscule = texte.toLowerCase();
+    for (final commande in _commandesLocales) {
+      final motsCles = commande['motsCles'] as List<String>;
+      final action = commande['action'] as String;
+      final contientMotCle = motsCles.any((mot) => texteMinuscule.contains(mot));
+      final contientAction = texteMinuscule.contains(action);
+      if (contientMotCle && contientAction) {
+        return commande['reponse'] as String;
+      }
+    }
+    return null;
+  }
+
   Future<void> _initAssistant() async {
     final micStatus = await Permission.microphone.request();
     if (micStatus.isGranted) {
@@ -146,6 +221,28 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
       _recognizedText = "Shadya réfléchit...";
     });
 
+    final connecte = await _estConnecte();
+
+    if (!connecte) {
+      // Mode hors ligne : on cherche une commande locale connue
+      final reponseLocale = _chercherCommandeLocale(texteEntendu);
+      if (reponseLocale != null) {
+        setState(() {
+          _recognizedText = "Shadya : $reponseLocale";
+        });
+        await _speak(reponseLocale);
+      } else {
+        const messageHorsLigne =
+            "Je n'ai pas de connexion internet, je ne peux pas répondre à cette question maintenant.";
+        setState(() {
+          _recognizedText = messageHorsLigne;
+        });
+        await _speak(messageHorsLigne);
+      }
+      return;
+    }
+
+    // Mode en ligne : on passe par Gemini comme avant
     try {
       final promptInstructions =
           "Tu es Shadya, une assistante vocale chaleureuse et serviable. "
@@ -163,10 +260,14 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
       await _speak(reponseIA);
     } catch (e) {
       debugPrint("Erreur Gemini API: $e");
+      // En cas d'erreur réseau malgré la détection, on retente en local
+      final reponseLocale = _chercherCommandeLocale(texteEntendu);
+      final messageErreur = reponseLocale ??
+          "Une erreur est survenue, réessaie dans un instant.";
       setState(() {
-        _recognizedText = "Une erreur est survenue, réessaie dans un instant.";
+        _recognizedText = messageErreur;
       });
-      await _speak("Erreur détectée, réessaie dans un instant.");
+      await _speak(messageErreur);
     }
   }
 
