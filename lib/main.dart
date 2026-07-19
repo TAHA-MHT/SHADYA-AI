@@ -67,7 +67,6 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
   bool _speechEnabled = false;
   bool _isListening = false;
   String _recognizedText = '';
-  String? _appCheckToken;
   String? _debugSecretInfo;
   bool _showDebugPanel = false;
 
@@ -75,19 +74,7 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
   void initState() {
     super.initState();
 
-    FirebaseAppCheck.instance.getToken(true).then((token) {
-      if (mounted) {
-        setState(() {
-          _appCheckToken = token;
-        });
-      }
-    }).catchError((e) {
-      if (mounted) {
-        setState(() {
-          _appCheckToken = null;
-        });
-      }
-    });
+    FirebaseAppCheck.instance.getToken(true);
 
     _model = FirebaseAI.googleAI().generativeModel(
       model: 'gemini-3.5-flash',
