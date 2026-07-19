@@ -144,7 +144,6 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
     _setup();
   }
 
-  // On demande les permissions l'une après l'autre, jamais en même temps
   Future<void> _setup() async {
     await _initAssistant();
     await _loadContacts();
@@ -333,12 +332,10 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
     } catch (e) {
       debugPrint("Erreur Gemini API: $e");
       final reponseLocale = _chercherCommandeLocale(texteEntendu);
-      final messageErreur = reponseLocale ??
-          "Une erreur est survenue, réessaie dans un instant.";
+      final messageErreur = reponseLocale ?? "ERREUR DEBUG: $e";
       setState(() {
         _recognizedText = messageErreur;
       });
-      await _speak(messageErreur);
     }
   }
 
