@@ -75,7 +75,6 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
 
   List<Contact> _contacts = [];
 
-  // Liste des commandes locales (mot-clés -> réponse), fonctionne sans internet
   final List<Map<String, dynamic>> _commandesLocales = [
     {
       'motsCles': ['lumière', 'lumiere'],
@@ -141,8 +140,14 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
         maxOutputTokens: 800,
       ),
     );
-    _initAssistant();
-    _loadContacts();
+
+    _setup();
+  }
+
+  // On demande les permissions l'une après l'autre, jamais en même temps
+  Future<void> _setup() async {
+    await _initAssistant();
+    await _loadContacts();
   }
 
   Future<void> _loadContacts() async {
@@ -184,7 +189,6 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
     return !connectivityResult.contains(ConnectivityResult.none);
   }
 
-  // Cherche une commande locale correspondant au texte entendu (domotique)
   String? _chercherCommandeLocale(String texte) {
     final texteMinuscule = texte.toLowerCase();
     for (final commande in _commandesLocales) {
@@ -199,8 +203,6 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
     return null;
   }
 
-  // Cherche si la phrase demande d'appeler ou d'ouvrir un contact
-  // Retourne true si la commande a été traitée (trouvée ou non)
   Future<bool> _essayerCommandeContact(String texte) async {
     final texteMinuscule = texte.toLowerCase();
     final motsDeclencheurs = ['appelle', 'appeler', 'ouvre le contact', 'ouvre contact'];
@@ -208,7 +210,6 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
     final estCommandeContact = motsDeclencheurs.any((mot) => texteMinuscule.contains(mot));
     if (!estCommandeContact) return false;
 
-    // On retire les mots déclencheurs pour isoler le nom recherché
     String nomRecherche = texteMinuscule;
     for (final mot in motsDeclencheurs) {
       nomRecherche = nomRecherche.replaceAll(mot, '');
@@ -291,14 +292,12 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
       _recognizedText = "Shadya réfléchit...";
     });
 
-    // Priorité 1 : commande de contact/appel (fonctionne même hors ligne)
     final commandeContactTraitee = await _essayerCommandeContact(texteEntendu);
     if (commandeContactTraitee) return;
 
     final connecte = await _estConnecte();
 
     if (!connecte) {
-      // Mode hors ligne : on cherche une commande domotique locale connue
       final reponseLocale = _chercherCommandeLocale(texteEntendu);
       if (reponseLocale != null) {
         setState(() {
@@ -316,7 +315,6 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
       return;
     }
 
-    // Mode en ligne : on passe par Gemini comme avant
     try {
       final promptInstructions =
           "Tu es Shadya, une assistante vocale chaleureuse et serviable. "
