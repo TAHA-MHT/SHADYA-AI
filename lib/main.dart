@@ -6,6 +6,8 @@ import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:flutter_contacts/flutter_contacts.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import 'package:firebase_app_check/firebase_app_check.dart';
 import 'firebase_options.dart';
@@ -70,6 +72,8 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
   String _recognizedText = '';
   String? _debugSecretInfo;
   bool _showDebugPanel = false;
+
+  List<Contact> _contacts = [];
 
   // Liste des commandes locales (mot-clés -> réponse), fonctionne sans internet
   final List<Map<String, dynamic>> _commandesLocales = [
@@ -138,6 +142,16 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
       ),
     );
     _initAssistant();
+    _loadContacts();
+  }
+
+  Future<void> _loadContacts() async {
+    if (await FlutterContacts.requestPermission()) {
+      final contacts = await FlutterContacts.getContacts(withProperties: true);
+      setState(() {
+        _contacts = contacts;
+      });
+    }
   }
 
   Future<void> _fetchDebugSecret() async {
@@ -170,7 +184,7 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
     return !connectivityResult.contains(ConnectivityResult.none);
   }
 
-  // Cherche une commande locale correspondant au texte entendu
+  // Cherche une commande locale correspondant au texte entendu (domotique)
   String? _chercherCommandeLocale(String texte) {
     final texteMinuscule = texte.toLowerCase();
     for (final commande in _commandesLocales) {
@@ -183,6 +197,62 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
       }
     }
     return null;
+  }
+
+  // Cherche si la phrase demande d'appeler ou d'ouvrir un contact
+  // Retourne true si la commande a été traitée (trouvée ou non)
+  Future<bool> _essayerCommandeContact(String texte) async {
+    final texteMinuscule = texte.toLowerCase();
+    final motsDeclencheurs = ['appelle', 'appeler', 'ouvre le contact', 'ouvre contact'];
+
+    final estCommandeContact = motsDeclencheurs.any((mot) => texteMinuscule.contains(mot));
+    if (!estCommandeContact) return false;
+
+    // On retire les mots déclencheurs pour isoler le nom recherché
+    String nomRecherche = texteMinuscule;
+    for (final mot in motsDeclencheurs) {
+      nomRecherche = nomRecherche.replaceAll(mot, '');
+    }
+    nomRecherche = nomRecherche.trim();
+
+    if (nomRecherche.isEmpty) {
+      const message = "Dis-moi quel nom tu veux que j'appelle.";
+      setState(() {
+        _recognizedText = message;
+      });
+      await _speak(message);
+      return true;
+    }
+
+    Contact? contactTrouve;
+    for (final contact in _contacts) {
+      if (contact.displayName.toLowerCase().contains(nomRecherche)) {
+        contactTrouve = contact;
+        break;
+      }
+    }
+
+    if (contactTrouve == null || contactTrouve.phones.isEmpty) {
+      final message = "Je n'ai pas trouvé de contact nommé $nomRecherche.";
+      setState(() {
+        _recognizedText = message;
+      });
+      await _speak(message);
+      return true;
+    }
+
+    final numero = contactTrouve.phones.first.number;
+    final message = "J'ouvre l'appel vers ${contactTrouve.displayName}.";
+    setState(() {
+      _recognizedText = message;
+    });
+    await _speak(message);
+
+    final uri = Uri(scheme: 'tel', path: numero);
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri);
+    }
+    return true;
   }
 
   Future<void> _initAssistant() async {
@@ -221,10 +291,14 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
       _recognizedText = "Shadya réfléchit...";
     });
 
+    // Priorité 1 : commande de contact/appel (fonctionne même hors ligne)
+    final commandeContactTraitee = await _essayerCommandeContact(texteEntendu);
+    if (commandeContactTraitee) return;
+
     final connecte = await _estConnecte();
 
     if (!connecte) {
-      // Mode hors ligne : on cherche une commande locale connue
+      // Mode hors ligne : on cherche une commande domotique locale connue
       final reponseLocale = _chercherCommandeLocale(texteEntendu);
       if (reponseLocale != null) {
         setState(() {
@@ -260,7 +334,6 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
       await _speak(reponseIA);
     } catch (e) {
       debugPrint("Erreur Gemini API: $e");
-      // En cas d'erreur réseau malgré la détection, on retente en local
       final reponseLocale = _chercherCommandeLocale(texteEntendu);
       final messageErreur = reponseLocale ??
           "Une erreur est survenue, réessaie dans un instant.";
