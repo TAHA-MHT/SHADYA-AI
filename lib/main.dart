@@ -93,7 +93,6 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
       generationConfig: GenerationConfig(
         maxOutputTokens: 800,
       ),
-      thinkingConfig: ThinkingConfig.withThinkingBudget(0),
     );
     _initAssistant();
   }
