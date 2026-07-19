@@ -68,7 +68,8 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
   bool _isListening = false;
   String _recognizedText = '';
   String? _appCheckToken;
-  String _debugSecretInfo = 'Tape sur "Afficher secret debug" ci-dessous';
+  String? _debugSecretInfo;
+  bool _showDebugPanel = false;
 
   @override
   void initState() {
@@ -83,7 +84,7 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
     }).catchError((e) {
       if (mounted) {
         setState(() {
-          _appCheckToken = 'Erreur récupération token: $e';
+          _appCheckToken = null;
         });
       }
     });
@@ -99,6 +100,7 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
 
   Future<void> _fetchDebugSecret() async {
     setState(() {
+      _showDebugPanel = true;
       _debugSecretInfo = 'Recherche en cours...';
     });
     try {
@@ -111,7 +113,7 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
       );
       setState(() {
         _debugSecretInfo = secretLine.isEmpty
-            ? 'Pas encore trouvé. Ferme et rouvre complètement l\'app, puis retape ici.'
+            ? 'Pas encore trouvé. Ferme et rouvre complètement l\'app, puis réessaie.'
             : secretLine;
       });
     } catch (e) {
@@ -175,9 +177,9 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
     } catch (e) {
       debugPrint("Erreur Gemini API: $e");
       setState(() {
-        _recognizedText = "ERREUR: $e";
+        _recognizedText = "Une erreur est survenue, réessaie dans un instant.";
       });
-      await _speak("Erreur détectée, regarde l'écran.");
+      await _speak("Erreur détectée, réessaie dans un instant.");
     }
   }
 
@@ -220,9 +222,12 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               const SizedBox(height: 24),
-              Text(
-                loc.appTitle,
-                style: Theme.of(context).textTheme.headlineMedium,
+              GestureDetector(
+                onLongPress: _fetchDebugSecret,
+                child: Text(
+                  loc.appTitle,
+                  style: Theme.of(context).textTheme.headlineMedium,
+                ),
               ),
               const SizedBox(height: 24),
               Padding(
@@ -237,29 +242,17 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
                   style: Theme.of(context).textTheme.titleLarge,
                 ),
               ),
-              const SizedBox(height: 24),
-              if (_appCheckToken != null)
+              if (_showDebugPanel) ...[
+                const SizedBox(height: 24),
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16),
                   child: SelectableText(
-                    'TOKEN: $_appCheckToken',
-                    style: const TextStyle(fontSize: 10),
+                    _debugSecretInfo ?? '',
+                    style: const TextStyle(fontSize: 11),
                     textAlign: TextAlign.center,
                   ),
                 ),
-              const SizedBox(height: 16),
-              ElevatedButton(
-                onPressed: _fetchDebugSecret,
-                child: const Text('Afficher secret debug'),
-              ),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                child: SelectableText(
-                  _debugSecretInfo,
-                  style: const TextStyle(fontSize: 11),
-                  textAlign: TextAlign.center,
-                ),
-              ),
+              ],
               const SizedBox(height: 24),
               GestureDetector(
                 onTap: _toggleListening,
