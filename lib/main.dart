@@ -8,6 +8,7 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter_contacts/flutter_contacts.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:intl/intl.dart';
 
 import 'package:firebase_app_check/firebase_app_check.dart';
 import 'firebase_options.dart';
@@ -75,6 +76,7 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
 
   List<Contact> _contacts = [];
 
+  // Commandes domotique locales (offline)
   final List<Map<String, dynamic>> _commandesLocales = [
     {
       'motsCles': ['lumière', 'lumiere'],
@@ -125,6 +127,81 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
       'motsCles': ['radio'],
       'action': 'éteins',
       'reponse': "D'accord, j'éteins la radio.",
+    },
+    {
+      'motsCles': ['portail'],
+      'action': 'ouvre',
+      'reponse': "D'accord, j'ouvre le portail.",
+    },
+    {
+      'motsCles': ['portail'],
+      'action': 'ferme',
+      'reponse': "D'accord, je ferme le portail.",
+    },
+    {
+      'motsCles': ['porte'],
+      'action': 'ouvre',
+      'reponse': "D'accord, j'ouvre la porte.",
+    },
+    {
+      'motsCles': ['porte'],
+      'action': 'ferme',
+      'reponse': "D'accord, je ferme la porte.",
+    },
+    {
+      'motsCles': ['chauffe-eau', 'chauffe eau'],
+      'action': 'allume',
+      'reponse': "D'accord, j'allume le chauffe-eau.",
+    },
+    {
+      'motsCles': ['chauffe-eau', 'chauffe eau'],
+      'action': 'éteins',
+      'reponse': "D'accord, j'éteins le chauffe-eau.",
+    },
+    {
+      'motsCles': ['générateur', 'generateur'],
+      'action': 'allume',
+      'reponse': "D'accord, j'allume le générateur.",
+    },
+    {
+      'motsCles': ['générateur', 'generateur'],
+      'action': 'éteins',
+      'reponse': "D'accord, j'éteins le générateur.",
+    },
+  ];
+
+  // Réponses fixes locales : salutations, remerciements, FAQ sur l'app
+  final List<Map<String, dynamic>> _reponsesFixes = [
+    {
+      'motsCles': ['bonjour', 'salut', 'bonsoir', 'salam', 'salamalik'],
+      'reponse': "Bonjour ! Je suis Shadya, comment puis-je t'aider ?",
+    },
+    {
+      'motsCles': ['comment ça va', 'comment vas-tu', 'ça va'],
+      'reponse': "Je vais très bien, merci ! Et toi, comment ça va ?",
+    },
+    {
+      'motsCles': ['merci'],
+      'reponse': "Avec plaisir !",
+    },
+    {
+      'motsCles': ['au revoir', 'à bientôt', 'a bientot', 'bye'],
+      'reponse': "À bientôt !",
+    },
+    {
+      'motsCles': ['qui es-tu', 'qui es tu', 'tu es qui', "c'est quoi shadya"],
+      'reponse':
+          "Je suis Shadya, ton assistante vocale développée par Peace Technologies.",
+    },
+    {
+      'motsCles': ['que peux-tu faire', 'que sais-tu faire', 'tu sers à quoi'],
+      'reponse':
+          "Je peux contrôler des appareils chez toi, appeler tes contacts, et répondre à tes questions.",
+    },
+    {
+      'motsCles': ['tu es hors ligne', 'pas de connexion', 'pas internet'],
+      'reponse':
+          "Je fonctionne même sans connexion pour les commandes de base comme la domotique.",
     },
   ];
 
@@ -198,6 +275,34 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
       if (contientMotCle && contientAction) {
         return commande['reponse'] as String;
       }
+    }
+    return null;
+  }
+
+  String? _chercherReponseFixe(String texte) {
+    final texteMinuscule = texte.toLowerCase();
+    for (final entree in _reponsesFixes) {
+      final motsCles = entree['motsCles'] as List<String>;
+      final contientMotCle = motsCles.any((mot) => texteMinuscule.contains(mot));
+      if (contientMotCle) {
+        return entree['reponse'] as String;
+      }
+    }
+    return null;
+  }
+
+  String? _chercherCommandeSysteme(String texte) {
+    final texteMinuscule = texte.toLowerCase();
+    if (texteMinuscule.contains('quelle heure') ||
+        texteMinuscule.contains("l'heure")) {
+      final heure = DateFormat('HH:mm').format(DateTime.now());
+      return "Il est $heure.";
+    }
+    if (texteMinuscule.contains('quel jour') ||
+        texteMinuscule.contains('la date') ||
+        texteMinuscule.contains("date d'aujourd'hui")) {
+      final date = DateFormat('EEEE d MMMM y', 'fr_FR').format(DateTime.now());
+      return "Nous sommes le $date.";
     }
     return null;
   }
@@ -291,26 +396,50 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
       _recognizedText = "Shadya réfléchit...";
     });
 
+    // 1. Commande d'appel de contact (toujours en local)
     final commandeContactTraitee = await _essayerCommandeContact(texteEntendu);
     if (commandeContactTraitee) return;
 
+    // 2. Commande domotique (toujours en local, connecté ou pas)
+    final reponseDomotique = _chercherCommandeLocale(texteEntendu);
+    if (reponseDomotique != null) {
+      setState(() {
+        _recognizedText = "Shadya : $reponseDomotique";
+      });
+      await _speak(reponseDomotique);
+      return;
+    }
+
+    // 3. Salutations / FAQ sur l'app (toujours en local)
+    final reponseFixe = _chercherReponseFixe(texteEntendu);
+    if (reponseFixe != null) {
+      setState(() {
+        _recognizedText = "Shadya : $reponseFixe";
+      });
+      await _speak(reponseFixe);
+      return;
+    }
+
+    // 4. Heure / date (toujours en local, calculé sur le téléphone)
+    final reponseSysteme = _chercherCommandeSysteme(texteEntendu);
+    if (reponseSysteme != null) {
+      setState(() {
+        _recognizedText = "Shadya : $reponseSysteme";
+      });
+      await _speak(reponseSysteme);
+      return;
+    }
+
+    // 5. Rien trouvé en local : on vérifie la connexion avant Gemini
     final connecte = await _estConnecte();
 
     if (!connecte) {
-      final reponseLocale = _chercherCommandeLocale(texteEntendu);
-      if (reponseLocale != null) {
-        setState(() {
-          _recognizedText = "Shadya : $reponseLocale";
-        });
-        await _speak(reponseLocale);
-      } else {
-        const messageHorsLigne =
-            "Je n'ai pas de connexion internet, je ne peux pas répondre à cette question maintenant.";
-        setState(() {
-          _recognizedText = messageHorsLigne;
-        });
-        await _speak(messageHorsLigne);
-      }
+      const messageHorsLigne =
+          "Je n'ai pas de connexion internet, je ne peux pas répondre à cette question maintenant.";
+      setState(() {
+        _recognizedText = messageHorsLigne;
+      });
+      await _speak(messageHorsLigne);
       return;
     }
 
@@ -331,8 +460,8 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
       await _speak(reponseIA);
     } catch (e) {
       debugPrint("Erreur Gemini API: $e");
-      final reponseLocale = _chercherCommandeLocale(texteEntendu);
-      final messageErreur = reponseLocale ?? "ERREUR DEBUG: $e";
+      const messageErreur =
+          "Je n'ai pas pu contacter le service en ligne pour cette question.";
       setState(() {
         _recognizedText = messageErreur;
       });
