@@ -10,49 +10,51 @@ import 'package:flutter_contacts/flutter_contacts.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:intl/intl.dart';
 import 'package:vosk_flutter/vosk_flutter.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:firebase_app_check/firebase_app_check.dart';
 import 'firebase_options.dart';
 import 'l10n/app_localizations.dart';
 
 Future<void> main() async {
-  runZonedGuarded(() async {
+  runZonedGuarded<Future<void>>(() async {
     WidgetsFlutterBinding.ensureInitialized();
 
     FlutterError.onError = (FlutterErrorDetails details) {
-      FlutterError.presentError(details);
+      _sauvegarderErreurFatale('FlutterError: ${details.exceptionAsString()}');
     };
 
-    try {
-      await Firebase.initializeApp(
-        options: DefaultFirebaseOptions.currentPlatform,
-      );
-      await FirebaseAppCheck.instance.activate(
-        androidProvider: AndroidProvider.debug,
-      );
-    } catch (e) {
-      debugPrint("Erreur init Firebase au démarrage: $e");
-    }
+    await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform,
+    );
+    await FirebaseAppCheck.instance.activate(
+      androidProvider: AndroidProvider.debug,
+    );
 
     runApp(const ShadyaApp());
   }, (error, stackTrace) {
-    runApp(
-      MaterialApp(
-        home: Scaffold(
-          backgroundColor: Colors.red,
-          body: SafeArea(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(16),
-              child: SelectableText(
-                'ERREUR AU DÉMARRAGE:\n\n$error\n\n$stackTrace',
-                style: const TextStyle(color: Colors.white, fontSize: 12),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
+    _sauvegarderErreurFatale('Erreur non gérée: $error');
   });
+}
+
+Future<void> _sauvegarderErreurFatale(String message) async {
+  try {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('derniere_erreur_fatale', message);
+    await prefs.setString(
+      'derniere_erreur_date',
+      DateTime.now().toIso8601String(),
+    );
+  } catch (_) {
+    // Si même ça échoue, on ne peut rien faire de plus.
+  }
+}
+
+Future<void> _sauvegarderEtape(String etape) async {
+  try {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('derniere_etape', etape);
+  } catch (_) {}
 }
 
 class ShadyaApp extends StatelessWidget {
@@ -94,10 +96,10 @@ class VoiceHomeScreen extends StatefulWidget {
 class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
   final FlutterTts _tts = FlutterTts();
 
-  GenerativeModel? _model;
+  late final GenerativeModel _model;
 
-  // Vosk (nullable pour éviter le crash immédiat au lancement)
-  VoskFlutterPlugin? _vosk;
+  // Vosk
+  final VoskFlutterPlugin _vosk = VoskFlutterPlugin.instance();
   Model? _voskModel;
   Recognizer? _recognizer;
   SpeechService? _speechService;
@@ -249,123 +251,106 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
   void initState() {
     super.initState();
 
-    try {
-      FirebaseAppCheck.instance.getToken(true);
-      _model = FirebaseAI.googleAI().generativeModel(
-        model: 'gemini-3.5-flash',
-        generationConfig: GenerationConfig(
-          maxOutputTokens: 800,
-        ),
-      );
-    } catch (e) {
-      debugPrint("Erreur init Firebase/Gemini: $e");
-    }
+    FirebaseAppCheck.instance.getToken(true);
+
+    _model = FirebaseAI.googleAI().generativeModel(
+      model: 'gemini-3.5-flash',
+      generationConfig: GenerationConfig(
+        maxOutputTokens: 800,
+      ),
+    );
 
     _setup();
   }
 
   Future<void> _setup() async {
-    try {
-      await _loadContacts();
-    } catch (e) {
-      debugPrint("Erreur chargement contacts: $e");
-    }
-
-    try {
-      await _initVosk();
-    } catch (e) {
-      debugPrint("Erreur globale Vosk: $e");
-      if (mounted) {
-        setState(() {
-          _voskStatus = "Impossible d'initialiser le vocal: $e";
-        });
-      }
-    }
+    await _loadContacts();
+    await _initVosk();
   }
 
   Future<void> _loadContacts() async {
     if (await FlutterContacts.requestPermission()) {
       final contacts = await FlutterContacts.getContacts(withProperties: true);
-      if (mounted) {
-        setState(() {
-          _contacts = contacts;
-        });
-      }
+      setState(() {
+        _contacts = contacts;
+      });
     }
   }
 
   Future<void> _initVosk() async {
+    await _sauvegarderEtape('Début _initVosk');
+
     final micStatus = await Permission.microphone.request();
     if (!micStatus.isGranted) {
-      if (mounted) {
-        setState(() {
-          _voskStatus = "Permission micro refusée.";
-        });
-      }
+      setState(() {
+        _voskStatus = "Permission micro refusée.";
+      });
       return;
     }
-
-    _vosk ??= VoskFlutterPlugin.instance();
+    await _sauvegarderEtape('Permission micro accordée');
 
     final modelLoader = ModelLoader();
     String? modelPath;
 
     try {
+      await _sauvegarderEtape('Avant modelLoader.modelPath()');
       modelPath = await modelLoader.modelPath(_voskModelName);
+      await _sauvegarderEtape('Après modelLoader.modelPath() : $modelPath');
     } catch (_) {
       modelPath = null;
+      await _sauvegarderEtape('modelPath() a échoué, pas encore en cache');
     }
 
     if (modelPath == null) {
       final connecte = await _estConnecte();
       if (!connecte) {
-        if (mounted) {
-          setState(() {
-            _voskStatus =
-                "Connecte-toi à internet une première fois pour activer la reconnaissance vocale.";
-          });
-        }
+        setState(() {
+          _voskStatus =
+              "Connecte-toi à internet une première fois pour activer la reconnaissance vocale.";
+        });
         return;
       }
 
       try {
-        if (mounted) {
-          setState(() {
-            _voskStatus = "Téléchargement du modèle vocal (une seule fois)...";
-          });
-        }
+        setState(() {
+          _voskStatus = "Téléchargement du modèle vocal (une seule fois)...";
+        });
+        await _sauvegarderEtape('Avant loadFromNetwork');
         modelPath = await modelLoader.loadFromNetwork(_voskModelUrl);
+        await _sauvegarderEtape('Après loadFromNetwork : $modelPath');
       } catch (e) {
-        if (mounted) {
-          setState(() {
-            _voskStatus = "Erreur de téléchargement du modèle vocal: $e";
-          });
-        }
+        await _sauvegarderEtape('loadFromNetwork a échoué: $e');
+        setState(() {
+          _voskStatus = "Erreur de téléchargement du modèle vocal: $e";
+        });
         return;
       }
     }
 
     try {
-      if (mounted) {
-        setState(() {
-          _voskStatus = "Chargement du modèle vocal...";
-        });
-      }
+      setState(() {
+        _voskStatus = "Chargement du modèle vocal...";
+      });
 
-      final model = await _vosk!.createModel(modelPath);
-      final recognizer = await _vosk!.createRecognizer(
+      await _sauvegarderEtape('Avant vosk.createModel');
+      final model = await _vosk.createModel(modelPath);
+      await _sauvegarderEtape('Après vosk.createModel');
+
+      await _sauvegarderEtape('Avant vosk.createRecognizer');
+      final recognizer = await _vosk.createRecognizer(
         model: model,
         sampleRate: _voskSampleRate,
       );
+      await _sauvegarderEtape('Après vosk.createRecognizer');
 
-      if (mounted) {
-        setState(() {
-          _voskModel = model;
-          _recognizer = recognizer;
-          _voskReady = true;
-          _voskStatus = '';
-        });
-      }
+      setState(() {
+        _voskModel = model;
+        _recognizer = recognizer;
+        _voskReady = true;
+        _voskStatus = '';
+      });
+
+      await _sauvegarderEtape('Vosk prêt avec succès');
 
       Future.delayed(const Duration(milliseconds: 500), () async {
         if (mounted) {
@@ -373,12 +358,25 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
         }
       });
     } catch (e) {
-      if (mounted) {
-        setState(() {
-          _voskStatus = "Erreur d'initialisation vocale: $e";
-        });
-      }
+      await _sauvegarderEtape('createModel/createRecognizer a échoué: $e');
+      setState(() {
+        _voskStatus = "Erreur d'initialisation vocale: $e";
+      });
     }
+  }
+
+  Future<void> _afficherDiagnostic() async {
+    final prefs = await SharedPreferences.getInstance();
+    final derniereEtape = prefs.getString('derniere_etape') ?? 'Aucune';
+    final derniereErreur =
+        prefs.getString('derniere_erreur_fatale') ?? 'Aucune';
+    final dateErreur = prefs.getString('derniere_erreur_date') ?? '';
+
+    setState(() {
+      _showDebugPanel = true;
+      _debugSecretInfo =
+          'Dernière étape atteinte: $derniereEtape\n\nDernière erreur fatale: $derniereErreur\n\nDate: $dateErreur';
+    });
   }
 
   Future<void> _fetchDebugSecret() async {
@@ -563,17 +561,13 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
     }
 
     try {
-      if (_model == null) {
-        throw Exception('Modèle IA non initialisé');
-      }
-
       final promptInstructions =
           "Tu es Shadya, une assistante vocale chaleureuse et serviable. "
           "Réponds de manière amicale, naturelle et très courte (maximum 2 phrases). "
           "Voici la question de l'utilisateur : $texteEntendu";
 
       final content = [Content.text(promptInstructions)];
-      final response = await _model!.generateContent(content);
+      final response = await _model.generateContent(content);
       final reponseIA = response.text ?? "Je n'ai pas pu formuler de réponse.";
 
       setState(() {
@@ -608,7 +602,7 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
   }
 
   void _toggleListening() async {
-    if (!_voskReady || _recognizer == null || _vosk == null) {
+    if (!_voskReady || _recognizer == null) {
       await _speak("La reconnaissance vocale n'est pas encore prête.");
       return;
     }
@@ -625,7 +619,7 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
         _recognizedText = '';
       });
 
-      _speechService ??= await _vosk!.initSpeechService(_recognizer!);
+      _speechService ??= await _vosk.initSpeechService(_recognizer!);
 
       _speechService!.onPartial().forEach((partial) {
         final texte = _extraireTexteVosk(partial, cle: 'partial');
@@ -675,7 +669,7 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
             children: [
               const SizedBox(height: 24),
               GestureDetector(
-                onLongPress: _fetchDebugSecret,
+                onLongPress: _afficherDiagnostic,
                 child: Text(
                   loc.appTitle,
                   style: Theme.of(context).textTheme.headlineMedium,
