@@ -265,7 +265,31 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
 
   Future<void> _setup() async {
     await _loadContacts();
+
+    final prefs = await SharedPreferences.getInstance();
+    final crashPrecedent = prefs.getBool('vosk_init_en_cours') ?? false;
+
+    if (crashPrecedent) {
+      final derniereEtape = prefs.getString('derniere_etape') ?? 'Aucune';
+      final derniereErreur =
+          prefs.getString('derniere_erreur_fatale') ?? 'Aucune';
+      final dateErreur = prefs.getString('derniere_erreur_date') ?? '';
+
+      setState(() {
+        _showDebugPanel = true;
+        _voskStatus =
+            "Un crash a été détecté au lancement précédent, juste après: $derniereEtape";
+        _debugSecretInfo =
+            'Dernière étape atteinte: $derniereEtape\n\nDernière erreur fatale: $derniereErreur\n\nDate: $dateErreur';
+      });
+
+      await prefs.remove('vosk_init_en_cours');
+      return;
+    }
+
+    await prefs.setBool('vosk_init_en_cours', true);
     await _initVosk();
+    await prefs.remove('vosk_init_en_cours');
   }
 
   Future<void> _loadContacts() async {
