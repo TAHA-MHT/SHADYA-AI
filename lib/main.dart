@@ -67,8 +67,8 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
 
   late final GenerativeModel _model;
 
-  // Vosk
-  final VoskFlutterPlugin _vosk = VoskFlutterPlugin.instance();
+  // Vosk (nullable pour éviter le crash immédiat au lancement)
+  VoskFlutterPlugin? _vosk;
   Model? _voskModel;
   Recognizer? _recognizer;
   SpeechService? _speechService;
@@ -220,46 +220,67 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
   void initState() {
     super.initState();
 
-    FirebaseAppCheck.instance.getToken(true);
-
-    _model = FirebaseAI.googleAI().generativeModel(
-      model: 'gemini-3.5-flash',
-      generationConfig: GenerationConfig(
-        maxOutputTokens: 800,
-      ),
-    );
+    try {
+      FirebaseAppCheck.instance.getToken(true);
+      _model = FirebaseAI.googleAI().generativeModel(
+        model: 'gemini-3.5-flash',
+        generationConfig: GenerationConfig(
+          maxOutputTokens: 800,
+        ),
+      );
+    } catch (e) {
+      debugPrint("Erreur init Firebase/Gemini: $e");
+    }
 
     _setup();
   }
 
   Future<void> _setup() async {
-    await _loadContacts();
-    await _initVosk();
+    try {
+      await _loadContacts();
+    } catch (e) {
+      debugPrint("Erreur chargement contacts: $e");
+    }
+
+    try {
+      await _initVosk();
+    } catch (e) {
+      debugPrint("Erreur globale Vosk: $e");
+      if (mounted) {
+        setState(() {
+          _voskStatus = "Impossible d'initialiser le vocal: $e";
+        });
+      }
+    }
   }
 
   Future<void> _loadContacts() async {
     if (await FlutterContacts.requestPermission()) {
       final contacts = await FlutterContacts.getContacts(withProperties: true);
-      setState(() {
-        _contacts = contacts;
-      });
+      if (mounted) {
+        setState(() {
+          _contacts = contacts;
+        });
+      }
     }
   }
 
   Future<void> _initVosk() async {
     final micStatus = await Permission.microphone.request();
     if (!micStatus.isGranted) {
-      setState(() {
-        _voskStatus = "Permission micro refusée.";
-      });
+      if (mounted) {
+        setState(() {
+          _voskStatus = "Permission micro refusée.";
+        });
+      }
       return;
     }
+
+    _vosk ??= VoskFlutterPlugin.instance();
 
     final modelLoader = ModelLoader();
     String? modelPath;
 
-    // On tente d'abord de récupérer le modèle déjà en cache localement,
-    // sans passer par le réseau du tout.
     try {
       modelPath = await modelLoader.modelPath(_voskModelName);
     } catch (_) {
@@ -267,46 +288,55 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
     }
 
     if (modelPath == null) {
-      // Pas encore en cache : il faut le télécharger (nécessite internet).
       final connecte = await _estConnecte();
       if (!connecte) {
-        setState(() {
-          _voskStatus =
-              "Connecte-toi à internet une première fois pour activer la reconnaissance vocale.";
-        });
+        if (mounted) {
+          setState(() {
+            _voskStatus =
+                "Connecte-toi à internet une première fois pour activer la reconnaissance vocale.";
+          });
+        }
         return;
       }
 
       try {
-        setState(() {
-          _voskStatus = "Téléchargement du modèle vocal (une seule fois)...";
-        });
+        if (mounted) {
+          setState(() {
+            _voskStatus = "Téléchargement du modèle vocal (une seule fois)...";
+          });
+        }
         modelPath = await modelLoader.loadFromNetwork(_voskModelUrl);
       } catch (e) {
-        setState(() {
-          _voskStatus = "Erreur de téléchargement du modèle vocal: $e";
-        });
+        if (mounted) {
+          setState(() {
+            _voskStatus = "Erreur de téléchargement du modèle vocal: $e";
+          });
+        }
         return;
       }
     }
 
     try {
-      setState(() {
-        _voskStatus = "Chargement du modèle vocal...";
-      });
+      if (mounted) {
+        setState(() {
+          _voskStatus = "Chargement du modèle vocal...";
+        });
+      }
 
-      final model = await _vosk.createModel(modelPath);
-      final recognizer = await _vosk.createRecognizer(
+      final model = await _vosk!.createModel(modelPath);
+      final recognizer = await _vosk!.createRecognizer(
         model: model,
         sampleRate: _voskSampleRate,
       );
 
-      setState(() {
-        _voskModel = model;
-        _recognizer = recognizer;
-        _voskReady = true;
-        _voskStatus = '';
-      });
+      if (mounted) {
+        setState(() {
+          _voskModel = model;
+          _recognizer = recognizer;
+          _voskReady = true;
+          _voskStatus = '';
+        });
+      }
 
       Future.delayed(const Duration(milliseconds: 500), () async {
         if (mounted) {
@@ -314,9 +344,11 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
         }
       });
     } catch (e) {
-      setState(() {
-        _voskStatus = "Erreur d'initialisation vocale: $e";
-      });
+      if (mounted) {
+        setState(() {
+          _voskStatus = "Erreur d'initialisation vocale: $e";
+        });
+      }
     }
   }
 
@@ -459,11 +491,9 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
       _recognizedText = "Shadya réfléchit...";
     });
 
-    // 1. Commande d'appel de contact (toujours en local)
     final commandeContactTraitee = await _essayerCommandeContact(texteEntendu);
     if (commandeContactTraitee) return;
 
-    // 2. Commande domotique (toujours en local, connecté ou pas)
     final reponseDomotique = _chercherCommandeLocale(texteEntendu);
     if (reponseDomotique != null) {
       setState(() {
@@ -473,7 +503,6 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
       return;
     }
 
-    // 3. Salutations / FAQ sur l'app (toujours en local)
     final reponseFixe = _chercherReponseFixe(texteEntendu);
     if (reponseFixe != null) {
       setState(() {
@@ -483,7 +512,6 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
       return;
     }
 
-    // 4. Heure / date (toujours en local, calculé sur le téléphone)
     final reponseSysteme = _chercherCommandeSysteme(texteEntendu);
     if (reponseSysteme != null) {
       setState(() {
@@ -493,7 +521,6 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
       return;
     }
 
-    // 5. Rien trouvé en local : on vérifie la connexion avant Gemini
     final connecte = await _estConnecte();
 
     if (!connecte) {
@@ -548,7 +575,7 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
   }
 
   void _toggleListening() async {
-    if (!_voskReady || _recognizer == null) {
+    if (!_voskReady || _recognizer == null || _vosk == null) {
       await _speak("La reconnaissance vocale n'est pas encore prête.");
       return;
     }
@@ -565,7 +592,7 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
         _recognizedText = '';
       });
 
-      _speechService ??= await _vosk.initSpeechService(_recognizer!);
+      _speechService ??= await _vosk!.initSpeechService(_recognizer!);
 
       _speechService!.onPartial().forEach((partial) {
         final texte = _extraireTexteVosk(partial, cle: 'partial');
