@@ -22,10 +22,8 @@ dependencies:
   firebase_app_check: ^0.4.5+2
   connectivity_plus: ^6.0.5
   flutter_contacts: ^1.1.9+2
-  vosk_flutter:
-    git:
-      url: https://github.com/alphacep/vosk-flutter
-
+  sherpa_onnx: ^1.13.2
+    
 dev_dependencies:
   flutter_test:
     sdk: flutter
