@@ -2,13 +2,13 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_ai/firebase_ai.dart';
-import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter_contacts/flutter_contacts.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:intl/intl.dart';
+import 'package:vosk_flutter/vosk_flutter.dart';
 
 import 'package:firebase_app_check/firebase_app_check.dart';
 import 'firebase_options.dart';
@@ -63,12 +63,23 @@ class VoiceHomeScreen extends StatefulWidget {
 }
 
 class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
-  final stt.SpeechToText _speech = stt.SpeechToText();
   final FlutterTts _tts = FlutterTts();
 
   late final GenerativeModel _model;
 
-  bool _speechEnabled = false;
+  // Vosk
+  final VoskFlutterPlugin _vosk = VoskFlutterPlugin.instance();
+  Model? _voskModel;
+  Recognizer? _recognizer;
+  SpeechService? _speechService;
+  bool _voskReady = false;
+  String _voskStatus = "Préparation de la reconnaissance vocale...";
+
+  static const String _voskModelName = 'vosk-model-small-fr-0.22';
+  static const String _voskModelUrl =
+      'https://alphacephei.com/vosk/models/vosk-model-small-fr-0.22.zip';
+  static const int _voskSampleRate = 16000;
+
   bool _isListening = false;
   String _recognizedText = '';
   String? _debugSecretInfo;
@@ -222,8 +233,8 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
   }
 
   Future<void> _setup() async {
-    await _initAssistant();
     await _loadContacts();
+    await _initVosk();
   }
 
   Future<void> _loadContacts() async {
@@ -231,6 +242,80 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
       final contacts = await FlutterContacts.getContacts(withProperties: true);
       setState(() {
         _contacts = contacts;
+      });
+    }
+  }
+
+  Future<void> _initVosk() async {
+    final micStatus = await Permission.microphone.request();
+    if (!micStatus.isGranted) {
+      setState(() {
+        _voskStatus = "Permission micro refusée.";
+      });
+      return;
+    }
+
+    final modelLoader = ModelLoader();
+    String? modelPath;
+
+    // On tente d'abord de récupérer le modèle déjà en cache localement,
+    // sans passer par le réseau du tout.
+    try {
+      modelPath = await modelLoader.modelPath(_voskModelName);
+    } catch (_) {
+      modelPath = null;
+    }
+
+    if (modelPath == null) {
+      // Pas encore en cache : il faut le télécharger (nécessite internet).
+      final connecte = await _estConnecte();
+      if (!connecte) {
+        setState(() {
+          _voskStatus =
+              "Connecte-toi à internet une première fois pour activer la reconnaissance vocale.";
+        });
+        return;
+      }
+
+      try {
+        setState(() {
+          _voskStatus = "Téléchargement du modèle vocal (une seule fois)...";
+        });
+        modelPath = await modelLoader.loadFromNetwork(_voskModelUrl);
+      } catch (e) {
+        setState(() {
+          _voskStatus = "Erreur de téléchargement du modèle vocal: $e";
+        });
+        return;
+      }
+    }
+
+    try {
+      setState(() {
+        _voskStatus = "Chargement du modèle vocal...";
+      });
+
+      final model = await _vosk.createModel(modelPath);
+      final recognizer = await _vosk.createRecognizer(
+        model: model,
+        sampleRate: _voskSampleRate,
+      );
+
+      setState(() {
+        _voskModel = model;
+        _recognizer = recognizer;
+        _voskReady = true;
+        _voskStatus = '';
+      });
+
+      Future.delayed(const Duration(milliseconds: 500), () async {
+        if (mounted) {
+          await _speak(AppLocalizations.of(context)!.greeting);
+        }
+      });
+    } catch (e) {
+      setState(() {
+        _voskStatus = "Erreur d'initialisation vocale: $e";
       });
     }
   }
@@ -360,28 +445,6 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
     return true;
   }
 
-  Future<void> _initAssistant() async {
-    final micStatus = await Permission.microphone.request();
-    if (micStatus.isGranted) {
-      _speechEnabled = await _speech.initialize(
-        onError: (error) => debugPrint('Erreur reconnaissance: $error'),
-        onStatus: (status) {
-          if (status == 'done' || status == 'notListening') {
-            setState(() => _isListening = false);
-          }
-        },
-      );
-      setState(() {});
-      Future.delayed(const Duration(milliseconds: 500), () async {
-        if (mounted) {
-          await _speak(AppLocalizations.of(context)!.greeting);
-        }
-      });
-    } else {
-      setState(() {});
-    }
-  }
-
   Future<void> _speak(String text) async {
     await _tts.setLanguage('fr-FR');
     await _tts.setVolume(1.0);
@@ -485,32 +548,60 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
   }
 
   void _toggleListening() async {
-    if (!_speechEnabled) {
-      await _speak(AppLocalizations.of(context)!.microphonePermissionDenied);
+    if (!_voskReady || _recognizer == null) {
+      await _speak("La reconnaissance vocale n'est pas encore prête.");
       return;
     }
+
     if (_isListening) {
-      await _speech.stop();
+      await _speechService?.stop();
       setState(() => _isListening = false);
+
+      final resultJson = await _recognizer!.getFinalResult();
+      _handleVoskResult(resultJson);
     } else {
       setState(() {
         _isListening = true;
         _recognizedText = '';
       });
-      await _speech.listen(
-        onResult: (result) {
-          setState(() {
-            _recognizedText = result.recognizedWords;
-          });
 
-          if (result.finalResult) {
-            setState(() => _isListening = false);
-            _analyserEtRepondre(result.recognizedWords);
-          }
-        },
-        localeId: 'fr_FR',
-      );
+      _speechService ??= await _vosk.initSpeechService(_recognizer!);
+
+      _speechService!.onPartial().forEach((partial) {
+        final texte = _extraireTexteVosk(partial, cle: 'partial');
+        if (texte.isNotEmpty) {
+          setState(() {
+            _recognizedText = texte;
+          });
+        }
+      });
+
+      _speechService!.onResult().forEach((result) {
+        _handleVoskResult(result);
+      });
+
+      await _speechService!.start();
     }
+  }
+
+  void _handleVoskResult(String resultJson) {
+    final texte = _extraireTexteVosk(resultJson, cle: 'text');
+    setState(() => _isListening = false);
+    if (texte.isNotEmpty) {
+      _analyserEtRepondre(texte);
+    }
+  }
+
+  String _extraireTexteVosk(String json, {required String cle}) {
+    final regex = RegExp('"$cle"\\s*:\\s*"([^"]*)"');
+    final match = regex.firstMatch(json);
+    return match?.group(1)?.trim() ?? '';
+  }
+
+  @override
+  void dispose() {
+    _speechService?.stop();
+    super.dispose();
   }
 
   @override
@@ -534,11 +625,13 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 32),
                 child: Text(
-                  _isListening
-                      ? loc.listeningPrompt
-                      : (_recognizedText.isEmpty
-                          ? loc.tapToSpeak
-                          : _recognizedText),
+                  !_voskReady
+                      ? _voskStatus
+                      : (_isListening
+                          ? loc.listeningPrompt
+                          : (_recognizedText.isEmpty
+                              ? loc.tapToSpeak
+                              : _recognizedText)),
                   textAlign: TextAlign.center,
                   style: Theme.of(context).textTheme.titleLarge,
                 ),
@@ -562,9 +655,11 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
                   height: 140,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    color: _isListening
-                        ? Theme.of(context).colorScheme.error
-                        : Theme.of(context).colorScheme.primary,
+                    color: !_voskReady
+                        ? Colors.grey
+                        : (_isListening
+                            ? Theme.of(context).colorScheme.error
+                            : Theme.of(context).colorScheme.primary),
                   ),
                   child: const Icon(
                     Icons.mic,
