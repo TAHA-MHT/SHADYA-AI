@@ -17,8 +17,9 @@ if (keystorePropertiesFile.exists()) {
 
 android {
     namespace = "com.shadyaai.app"
-    compileSdk = flutter.compileSdkVersion
+    compileSdk = 36
     ndkVersion = flutter.ndkVersion
+    
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
