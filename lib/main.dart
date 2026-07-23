@@ -460,11 +460,27 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
       await _speak(reponseIA);
     } catch (e) {
       debugPrint("Erreur Gemini API: $e");
-      const messageErreur =
-          "Je n'ai pas pu contacter le service en ligne pour cette question.";
+
+      final erreurTexte = e.toString().toLowerCase();
+      String messageErreur;
+
+      if (erreurTexte.contains('quota') || erreurTexte.contains('429')) {
+        messageErreur =
+            "Je suis très sollicitée en ce moment. Réessaie dans une minute.";
+      } else if (erreurTexte.contains('500') ||
+          erreurTexte.contains('internal') ||
+          erreurTexte.contains('high demand')) {
+        messageErreur =
+            "Le service est momentanément occupé. Réessaie dans quelques instants.";
+      } else {
+        messageErreur =
+            "Je n'ai pas pu contacter le service en ligne pour cette question.";
+      }
+
       setState(() {
         _recognizedText = messageErreur;
       });
+      await _speak(messageErreur);
     }
   }
 
