@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -15,15 +16,43 @@ import 'firebase_options.dart';
 import 'l10n/app_localizations.dart';
 
 Future<void> main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
-  );
-  await FirebaseAppCheck.instance.activate(
-    androidProvider: AndroidProvider.debug,
-  );
+  runZonedGuarded(() async {
+    WidgetsFlutterBinding.ensureInitialized();
 
-  runApp(const ShadyaApp());
+    FlutterError.onError = (FlutterErrorDetails details) {
+      FlutterError.presentError(details);
+    };
+
+    try {
+      await Firebase.initializeApp(
+        options: DefaultFirebaseOptions.currentPlatform,
+      );
+      await FirebaseAppCheck.instance.activate(
+        androidProvider: AndroidProvider.debug,
+      );
+    } catch (e) {
+      debugPrint("Erreur init Firebase au démarrage: $e");
+    }
+
+    runApp(const ShadyaApp());
+  }, (error, stackTrace) {
+    runApp(
+      MaterialApp(
+        home: Scaffold(
+          backgroundColor: Colors.red,
+          body: SafeArea(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(16),
+              child: SelectableText(
+                'ERREUR AU DÉMARRAGE:\n\n$error\n\n$stackTrace',
+                style: const TextStyle(color: Colors.white, fontSize: 12),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  });
 }
 
 class ShadyaApp extends StatelessWidget {
@@ -65,7 +94,7 @@ class VoiceHomeScreen extends StatefulWidget {
 class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
   final FlutterTts _tts = FlutterTts();
 
-  late final GenerativeModel _model;
+  GenerativeModel? _model;
 
   // Vosk (nullable pour éviter le crash immédiat au lancement)
   VoskFlutterPlugin? _vosk;
@@ -534,13 +563,17 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
     }
 
     try {
+      if (_model == null) {
+        throw Exception('Modèle IA non initialisé');
+      }
+
       final promptInstructions =
           "Tu es Shadya, une assistante vocale chaleureuse et serviable. "
           "Réponds de manière amicale, naturelle et très courte (maximum 2 phrases). "
           "Voici la question de l'utilisateur : $texteEntendu";
 
       final content = [Content.text(promptInstructions)];
-      final response = await _model.generateContent(content);
+      final response = await _model!.generateContent(content);
       final reponseIA = response.text ?? "Je n'ai pas pu formuler de réponse.";
 
       setState(() {
