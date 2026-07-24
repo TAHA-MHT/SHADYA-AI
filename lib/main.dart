@@ -271,7 +271,10 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
       _sherpaStatus = "Téléchargement du modèle vocal (une seule fois)...";
     });
 
+    await FileDownloader().cancelTasksWithIds(['sherpa_model_download']);
+
     final task = DownloadTask(
+      taskId: 'sherpa_model_download',
       url: _sherpaModelUrl,
       filename: _sherpaArchiveFilename,
       baseDirectory: BaseDirectory.applicationSupport,
@@ -291,8 +294,10 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
     );
 
     if (result.status != TaskStatus.complete) {
+      final details = result.exception?.description ?? 'aucun détail';
+      final code = result.exception?.httpResponseCode?.toString() ?? 'N/A';
       throw Exception(
-          "Échec du téléchargement du modèle (statut: ${result.status}). Vérifie ta connexion et réessaie.");
+          "Échec du téléchargement (statut: ${result.status}, code: $code, détail: $details).");
     }
 
     setState(() {
