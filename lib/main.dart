@@ -310,9 +310,10 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
     final result = await FileDownloader().download(
       task,
       onProgress: (progress) {
-        if (mounted) {
-          final pourcentage = (progress * 100).toStringAsFixed(0);
-          final recuMo = (progress * 380.0).toStringAsFixed(1);
+        if (mounted && progress >= 0.0) {
+          final progressSafe = progress.clamp(0.0, 1.0);
+          final pourcentage = (progressSafe * 100).toStringAsFixed(0);
+          final recuMo = (progressSafe * 380.0).toStringAsFixed(1);
           setState(() {
             _sherpaStatus =
                 "Téléchargement du modèle vocal... $pourcentage% ($recuMo/380.0 Mo)";
@@ -332,7 +333,7 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
       _sherpaStatus = "Extraction du modèle vocal (patientez)...";
     });
 
-    // Extraction en arrière-plan (Isolate)
+    // Décompression en arrière-plan (Isolate)
     await compute(_decompresserArchiveIsolate, {
       'archivePath': tempArchivePath,
       'appDirPath': appDir.path,
