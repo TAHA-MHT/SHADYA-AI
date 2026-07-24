@@ -26,7 +26,8 @@ dependencies:
   archive: ^3.6.1
   path_provider: ^2.1.6
   http: ^1.6.0
-
+  background_downloader: ^8.5.0
+  
 dev_dependencies:
   flutter_test:
     sdk: flutter
