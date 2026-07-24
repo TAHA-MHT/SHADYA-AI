@@ -9,7 +9,7 @@ import 'package:flutter_tts/flutter_tts.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter_contacts/flutter_contacts.dart';
-import 'package:url_launcher/url_launcher.dart';
+import 'package0/url_launcher.dart';
 import 'package:intl/intl.dart';
 import 'package:sherpa_onnx/sherpa_onnx.dart' as sherpa_onnx;
 import 'package:path_provider/path_provider.dart';
@@ -20,29 +20,30 @@ import 'package:firebase_app_check/firebase_app_check.dart';
 import 'firebase_options.dart';
 import 'l10n/app_localizations.dart';
 
-/// Décompression optimisée en Stream (évite la saturation RAM et les crashs Android)
+/// Décompression optimisée exécutée dans un Isolate séparé
 Future<void> _decompresserArchiveIsolate(Map<String, String> params) async {
   final tempArchivePath = params['archivePath']!;
   final appDirPath = params['appDirPath']!;
 
-  final inputStream = InputFileStream(tempArchivePath);
-  final tarArchive = TarDecoder().decodeBuffer(BZip2Decoder().decodeBuffer(inputStream));
+  final archiveFile = File(tempArchivePath);
+  final bytes = await archiveFile.readAsBytes();
+
+  final decompressedBzip2 = BZip2Decoder().decodeBytes(bytes);
+  final tarArchive = TarDecoder().decodeBytes(decompressedBzip2);
 
   for (final file in tarArchive) {
     final filePath = '$appDirPath/${file.name}';
     if (file.isFile) {
-      final outputStream = OutputFileStream(filePath);
-      file.writeContent(outputStream);
-      await outputStream.close();
+      final outFile = File(filePath);
+      await outFile.create(recursive: true);
+      await outFile.writeAsBytes(file.content as List<int>);
     } else {
       await Directory(filePath).create(recursive: true);
     }
   }
 
-  await inputStream.close();
-  final tempFile = File(tempArchivePath);
-  if (await tempFile.exists()) {
-    await tempFile.delete();
+  if (await archiveFile.exists()) {
+    await archiveFile.delete();
   }
 }
 
@@ -335,7 +336,6 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
       _sherpaStatus = "Extraction du modèle vocal (patientez)...";
     });
 
-    // Décompression sécurisée sans crash mémoire
     await compute(_decompresserArchiveIsolate, {
       'archivePath': tempArchivePath,
       'appDirPath': appDir.path,
