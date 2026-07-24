@@ -20,28 +20,30 @@ import 'package:firebase_app_check/firebase_app_check.dart';
 import 'firebase_options.dart';
 import 'l10n/app_localizations.dart';
 
-/// Fonction exécutée dans un Isolate séparé pour éviter de bloquer l'UI durant la décompression
+/// Décompression optimisée en Stream (évite la saturation RAM et les crashs Android)
 Future<void> _decompresserArchiveIsolate(Map<String, String> params) async {
   final tempArchivePath = params['archivePath']!;
   final appDirPath = params['appDirPath']!;
 
-  final tempFile = File(tempArchivePath);
-  final bz2Bytes = await tempFile.readAsBytes();
-  final tarBytes = BZip2Decoder().decodeBytes(bz2Bytes);
-  final archive = TarDecoder().decodeBytes(tarBytes);
+  final inputStream = InputFileStream(tempArchivePath);
+  final tarArchive = TarDecoder().decodeBuffer(BZip2Decoder().decodeBuffer(inputStream));
 
-  for (final file in archive) {
+  for (final file in tarArchive) {
     final filePath = '$appDirPath/${file.name}';
     if (file.isFile) {
-      final outFile = File(filePath);
-      await outFile.create(recursive: true);
-      await outFile.writeAsBytes(file.content as List<int>);
+      final outputStream = OutputFileStream(filePath);
+      file.writeContent(outputStream);
+      await outputStream.close();
     } else {
       await Directory(filePath).create(recursive: true);
     }
   }
 
-  await tempFile.delete();
+  await inputStream.close();
+  final tempFile = File(tempArchivePath);
+  if (await tempFile.exists()) {
+    await tempFile.delete();
+  }
 }
 
 Future<void> main() async {
@@ -333,7 +335,7 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
       _sherpaStatus = "Extraction du modèle vocal (patientez)...";
     });
 
-    // Décompression en arrière-plan (Isolate)
+    // Décompression sécurisée sans crash mémoire
     await compute(_decompresserArchiveIsolate, {
       'archivePath': tempArchivePath,
       'appDirPath': appDir.path,
@@ -390,31 +392,6 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
       _debugSecretInfo =
           'Sherpa prêt: $_sherpaReady\n\nStatut: $_sherpaStatus';
     });
-  }
-
-  Future<void> _fetchDebugSecret() async {
-    setState(() {
-      _showDebugPanel = true;
-      _debugSecretInfo = 'Recherche en cours...';
-    });
-    try {
-      final result = await Process.run('logcat', ['-d']);
-      final output = result.stdout.toString();
-      final lines = output.split('\n');
-      final secretLine = lines.firstWhere(
-        (l) => l.toLowerCase().contains('debug secret'),
-        orElse: () => '',
-      );
-      setState(() {
-        _debugSecretInfo = secretLine.isEmpty
-            ? 'Pas encore trouvé. Ferme et rouvre complètement l\'app, puis réessaie.'
-            : secretLine;
-      });
-    } catch (e) {
-      setState(() {
-        _debugSecretInfo = 'Erreur lecture logs: $e';
-      });
-    }
   }
 
   Future<bool> _estConnecte() async {
