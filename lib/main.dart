@@ -293,12 +293,11 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
       },
     );
 
-    if (result.status != TaskStatus.complete) {
+if (result.status != TaskStatus.complete) {
       final details = result.exception?.description ?? 'aucun détail';
-      final code = result.exception?.httpResponseCode?.toString() ?? 'N/A';
       throw Exception(
-          "Échec du téléchargement (statut: ${result.status}, code: $code, détail: $details).");
-    }
+          "Échec du téléchargement (statut: ${result.status}, détail: $details).");
+}
 
     setState(() {
       _sherpaStatus = "Extraction du modèle vocal...";
