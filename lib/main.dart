@@ -1,6 +1,4 @@
 import 'dart:io';
-import 'dart:typed_data';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_ai/firebase_ai.dart';
@@ -19,33 +17,6 @@ import 'package:background_downloader/background_downloader.dart';
 import 'package:firebase_app_check/firebase_app_check.dart';
 import 'firebase_options.dart';
 import 'l10n/app_localizations.dart';
-
-/// Décompression optimisée exécutée dans un Isolate séparé
-Future<void> _decompresserArchiveIsolate(Map<String, String> params) async {
-  final tempArchivePath = params['archivePath']!;
-  final appDirPath = params['appDirPath']!;
-
-  final archiveFile = File(tempArchivePath);
-  final bytes = await archiveFile.readAsBytes();
-
-  final decompressedBzip2 = BZip2Decoder().decodeBytes(bytes);
-  final tarArchive = TarDecoder().decodeBytes(decompressedBzip2);
-
-  for (final file in tarArchive) {
-    final filePath = '$appDirPath/${file.name}';
-    if (file.isFile) {
-      final outFile = File(filePath);
-      await outFile.create(recursive: true);
-      await outFile.writeAsBytes(file.content as List<int>);
-    } else {
-      await Directory(filePath).create(recursive: true);
-    }
-  }
-
-  if (await archiveFile.exists()) {
-    await archiveFile.delete();
-  }
-}
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -113,6 +84,7 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
       'https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-streaming-zipformer-fr-2023-04-14.tar.bz2';
   static const String _sherpaModelDirName =
       'sherpa-onnx-streaming-zipformer-fr-2023-04-14';
+  static const String _sherpaArchiveFilename = 'sherpa_model.tar.bz2';
 
   sherpa_onnx.OnlineRecognizer? _sherpaRecognizer;
   bool _sherpaReady = false;
@@ -299,47 +271,52 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
       _sherpaStatus = "Téléchargement du modèle vocal (une seule fois)...";
     });
 
-    const filename = 'sherpa_model.tar.bz2';
-
     final task = DownloadTask(
       url: _sherpaModelUrl,
-      filename: filename,
+      filename: _sherpaArchiveFilename,
       baseDirectory: BaseDirectory.applicationSupport,
-      updates: Updates.statusAndProgress,
-      retries: 5,
+      updates: Updates.progress,
       allowPause: true,
+      retries: 6,
     );
 
     final result = await FileDownloader().download(
       task,
       onProgress: (progress) {
-        if (mounted && progress >= 0.0) {
-          final progressSafe = progress.clamp(0.0, 1.0);
-          final pourcentage = (progressSafe * 100).toStringAsFixed(0);
-          final recuMo = (progressSafe * 380.0).toStringAsFixed(1);
-          setState(() {
-            _sherpaStatus =
-                "Téléchargement du modèle vocal... $pourcentage% ($recuMo/380.0 Mo)";
-          });
-        }
+        final pourcentage = (progress * 100).toStringAsFixed(0);
+        setState(() {
+          _sherpaStatus = "Téléchargement du modèle vocal... $pourcentage%";
+        });
       },
     );
 
     if (result.status != TaskStatus.complete) {
       throw Exception(
-          "Le téléchargement a échoué (statut: ${result.status}). Vérifie ta connexion et réessaie.");
+          "Échec du téléchargement du modèle (statut: ${result.status}). Vérifie ta connexion et réessaie.");
     }
 
-    final tempArchivePath = '${appDir.path}/$filename';
-
     setState(() {
-      _sherpaStatus = "Extraction du modèle vocal (patientez)...";
+      _sherpaStatus = "Extraction du modèle vocal...";
     });
 
-    await compute(_decompresserArchiveIsolate, {
-      'archivePath': tempArchivePath,
-      'appDirPath': appDir.path,
-    });
+    final archiveFilePath = await task.filePath();
+    final archiveFile = File(archiveFilePath);
+    final bz2Bytes = await archiveFile.readAsBytes();
+    final tarBytes = BZip2Decoder().decodeBytes(bz2Bytes);
+    final archive = TarDecoder().decodeBytes(tarBytes);
+
+    for (final file in archive) {
+      final filePath = '${appDir.path}/${file.name}';
+      if (file.isFile) {
+        final outFile = File(filePath);
+        await outFile.create(recursive: true);
+        await outFile.writeAsBytes(file.content as List<int>);
+      } else {
+        await Directory(filePath).create(recursive: true);
+      }
+    }
+
+    await archiveFile.delete();
 
     return modelDir.path;
   }
@@ -392,6 +369,31 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
       _debugSecretInfo =
           'Sherpa prêt: $_sherpaReady\n\nStatut: $_sherpaStatus';
     });
+  }
+
+  Future<void> _fetchDebugSecret() async {
+    setState(() {
+      _showDebugPanel = true;
+      _debugSecretInfo = 'Recherche en cours...';
+    });
+    try {
+      final result = await Process.run('logcat', ['-d']);
+      final output = result.stdout.toString();
+      final lines = output.split('\n');
+      final secretLine = lines.firstWhere(
+        (l) => l.toLowerCase().contains('debug secret'),
+        orElse: () => '',
+      );
+      setState(() {
+        _debugSecretInfo = secretLine.isEmpty
+            ? 'Pas encore trouvé. Ferme et rouvre complètement l\'app, puis réessaie.'
+            : secretLine;
+      });
+    } catch (e) {
+      setState(() {
+        _debugSecretInfo = 'Erreur lecture logs: $e';
+      });
+    }
   }
 
   Future<bool> _estConnecte() async {
