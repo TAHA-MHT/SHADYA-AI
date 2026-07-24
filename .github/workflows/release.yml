@@ -56,6 +56,15 @@ jobs:
         run: |
           flutter pub get
           flutter build apk --release --verbose > build_log.txt 2>&1 || true
+          echo "===================================================="
+          echo "===== ERREURS DETECTEES AUTOMATIQUEMENT ====="
+          echo "===================================================="
+          grep -n -i -E "FAILURE|What went wrong|error:|Exception|Execution failed|Caused by" build_log.txt | tail -150 || echo "Aucun mot-cle d'erreur trouve automatiquement."
+          echo "===================================================="
+          echo "===== FIN DE LA RECHERCHE AUTOMATIQUE ====="
+          echo "===================================================="
+          echo ""
+          echo "----- Dernieres 200 lignes du log complet -----"
           tail -200 build_log.txt
 
       - name: Upload full build log
