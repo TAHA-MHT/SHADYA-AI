@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'dart:typed_data';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_ai/firebase_ai.dart';
@@ -18,6 +19,30 @@ import 'package:background_downloader/background_downloader.dart';
 import 'package:firebase_app_check/firebase_app_check.dart';
 import 'firebase_options.dart';
 import 'l10n/app_localizations.dart';
+
+/// Fonction exécutée dans un Isolate séparé pour éviter de bloquer l'UI durant la décompression
+Future<void> _decompresserArchiveIsolate(Map<String, String> params) async {
+  final tempArchivePath = params['archivePath']!;
+  final appDirPath = params['appDirPath']!;
+
+  final tempFile = File(tempArchivePath);
+  final bz2Bytes = await tempFile.readAsBytes();
+  final tarBytes = BZip2Decoder().decodeBytes(bz2Bytes);
+  final archive = TarDecoder().decodeBytes(tarBytes);
+
+  for (final file in archive) {
+    final filePath = '$appDirPath/${file.name}';
+    if (file.isFile) {
+      final outFile = File(filePath);
+      await outFile.create(recursive: true);
+      await outFile.writeAsBytes(file.content as List<int>);
+    } else {
+      await Directory(filePath).create(recursive: true);
+    }
+  }
+
+  await tempFile.delete();
+}
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -273,7 +298,6 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
 
     const filename = 'sherpa_model.tar.bz2';
 
-    // Configuration de la tâche de téléchargement en arrière-plan
     final task = DownloadTask(
       url: _sherpaModelUrl,
       filename: filename,
@@ -283,7 +307,6 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
       allowPause: true,
     );
 
-    // Lancement du téléchargement avec gestion automatique du réseau
     final result = await FileDownloader().download(
       task,
       onProgress: (progress) {
@@ -304,32 +327,16 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
     }
 
     final tempArchivePath = '${appDir.path}/$filename';
-    final tempFile = File(tempArchivePath);
-
-    if (!await tempFile.exists()) {
-      throw Exception("Le fichier téléchargé n'a pas été trouvé sur le disque.");
-    }
 
     setState(() {
-      _sherpaStatus = "Extraction du modèle vocal...";
+      _sherpaStatus = "Extraction du modèle vocal (patientez)...";
     });
 
-    final bz2Bytes = await tempFile.readAsBytes();
-    final tarBytes = BZip2Decoder().decodeBytes(bz2Bytes);
-    final archive = TarDecoder().decodeBytes(tarBytes);
-
-    for (final file in archive) {
-      final filePath = '${appDir.path}/${file.name}';
-      if (file.isFile) {
-        final outFile = File(filePath);
-        await outFile.create(recursive: true);
-        await outFile.writeAsBytes(file.content as List<int>);
-      } else {
-        await Directory(filePath).create(recursive: true);
-      }
-    }
-
-    await tempFile.delete();
+    // Extraction en arrière-plan (Isolate)
+    await compute(_decompresserArchiveIsolate, {
+      'archivePath': tempArchivePath,
+      'appDirPath': appDir.path,
+    });
 
     return modelDir.path;
   }
