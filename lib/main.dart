@@ -1,5 +1,5 @@
 import 'dart:io';
-import 'package:sherpa_onnx/sherpa_onnx.dart' as sherpa_onnx;
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_ai/firebase_ai.dart';
@@ -10,6 +10,10 @@ import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter_contacts/flutter_contacts.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:intl/intl.dart';
+import 'package:sherpa_onnx/sherpa_onnx.dart' as sherpa_onnx;
+import 'package:path_provider/path_provider.dart';
+import 'package:http/http.dart' as http;
+import 'package:archive/archive.dart';
 
 import 'package:firebase_app_check/firebase_app_check.dart';
 import 'firebase_options.dart';
@@ -76,6 +80,16 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
   bool _showDebugPanel = false;
 
   List<Contact> _contacts = [];
+
+  // Sherpa-ONNX (en cours de préparation, pas encore utilisé pour l'écoute)
+  static const String _sherpaModelUrl =
+      'https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-streaming-zipformer-fr-2023-04-14.tar.bz2';
+  static const String _sherpaModelDirName =
+      'sherpa-onnx-streaming-zipformer-fr-2023-04-14';
+
+  sherpa_onnx.OnlineRecognizer? _sherpaRecognizer;
+  bool _sherpaReady = false;
+  String _sherpaStatus = "Préparation de la reconnaissance vocale...";
 
   final List<Map<String, dynamic>> _commandesLocales = [
     {
@@ -209,7 +223,9 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
     super.initState();
 
     FirebaseAppCheck.instance.getToken(true);
+
     sherpa_onnx.initBindings();
+
     _model = FirebaseAI.googleAI().generativeModel(
       model: 'gemini-3.5-flash',
       generationConfig: GenerationConfig(
@@ -223,6 +239,7 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
   Future<void> _setup() async {
     await _initAssistant();
     await _loadContacts();
+    _initSherpa();
   }
 
   Future<void> _loadContacts() async {
@@ -232,6 +249,105 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
         _contacts = contacts;
       });
     }
+  }
+
+  Future<String> _preparerModeleSherpa() async {
+    final appDir = await getApplicationSupportDirectory();
+    final modelDir = Directory('${appDir.path}/$_sherpaModelDirName');
+
+    if (await modelDir.exists()) {
+      final tokensFile = File('${modelDir.path}/tokens.txt');
+      if (await tokensFile.exists()) {
+        return modelDir.path;
+      }
+    }
+
+    final connecte = await _estConnecte();
+    if (!connecte) {
+      throw Exception(
+          "Connecte-toi à internet une première fois pour activer la reconnaissance vocale.");
+    }
+
+    setState(() {
+      _sherpaStatus = "Téléchargement du modèle vocal (une seule fois)...";
+    });
+
+    final response = await http.get(Uri.parse(_sherpaModelUrl));
+    if (response.statusCode != 200) {
+      throw Exception(
+          "Échec du téléchargement du modèle (code ${response.statusCode}).");
+    }
+
+    setState(() {
+      _sherpaStatus = "Extraction du modèle vocal...";
+    });
+
+    final Uint8List bz2Bytes = response.bodyBytes;
+    final tarBytes = BZip2Decoder().decodeBytes(bz2Bytes);
+    final archive = TarDecoder().decodeBytes(tarBytes);
+
+    await appDir.create(recursive: true);
+
+    for (final file in archive) {
+      final filePath = '${appDir.path}/${file.name}';
+      if (file.isFile) {
+        final outFile = File(filePath);
+        await outFile.create(recursive: true);
+        await outFile.writeAsBytes(file.content as List<int>);
+      } else {
+        await Directory(filePath).create(recursive: true);
+      }
+    }
+
+    return modelDir.path;
+  }
+
+  Future<void> _initSherpa() async {
+    final micStatus = await Permission.microphone.request();
+    if (!micStatus.isGranted) {
+      setState(() {
+        _sherpaStatus = "Permission micro refusée.";
+      });
+      return;
+    }
+
+    try {
+      final modelPath = await _preparerModeleSherpa();
+
+      setState(() {
+        _sherpaStatus = "Chargement du modèle vocal...";
+      });
+
+      final modelConfig = sherpa_onnx.OnlineModelConfig(
+        transducer: sherpa_onnx.OnlineTransducerModelConfig(
+          encoder: '$modelPath/encoder-epoch-21-avg-6.onnx',
+          decoder: '$modelPath/decoder-epoch-21-avg-6.onnx',
+          joiner: '$modelPath/joiner-epoch-21-avg-6.onnx',
+        ),
+        tokens: '$modelPath/tokens.txt',
+        modelType: 'zipformer',
+      );
+
+      final config = sherpa_onnx.OnlineRecognizerConfig(model: modelConfig);
+      _sherpaRecognizer = sherpa_onnx.OnlineRecognizer(config);
+
+      setState(() {
+        _sherpaReady = true;
+        _sherpaStatus = '';
+      });
+    } catch (e) {
+      setState(() {
+        _sherpaStatus = "Erreur d'initialisation vocale: $e";
+      });
+    }
+  }
+
+  Future<void> _afficherDiagnosticSherpa() async {
+    setState(() {
+      _showDebugPanel = true;
+      _debugSecretInfo =
+          'Sherpa prêt: $_sherpaReady\n\nStatut: $_sherpaStatus';
+    });
   }
 
   Future<void> _fetchDebugSecret() async {
@@ -518,7 +634,7 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
             children: [
               const SizedBox(height: 24),
               GestureDetector(
-                onLongPress: _fetchDebugSecret,
+                onLongPress: _afficherDiagnosticSherpa,
                 child: Text(
                   loc.appTitle,
                   style: Theme.of(context).textTheme.headlineMedium,
