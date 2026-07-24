@@ -275,34 +275,79 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
     final tempFile = File(tempArchivePath);
     await appDir.create(recursive: true);
 
-    final client = http.Client();
-    try {
-      final request = http.Request('GET', Uri.parse(_sherpaModelUrl));
-      final streamedResponse = await client.send(request);
+    const maxTentatives = 8;
+    var tentative = 0;
+    var succes = false;
 
-      if (streamedResponse.statusCode != 200) {
-        throw Exception(
-            "Échec du téléchargement du modèle (code ${streamedResponse.statusCode}).");
-      }
+    while (tentative < maxTentatives && !succes) {
+      tentative++;
+      final client = http.Client();
+      try {
+        int dejaRecu = await tempFile.exists() ? await tempFile.length() : 0;
 
-      final sink = tempFile.openWrite();
-      int recu = 0;
-      final total = streamedResponse.contentLength ?? 0;
-
-      await for (final chunk in streamedResponse.stream) {
-        sink.add(chunk);
-        recu += chunk.length;
-        if (total > 0) {
-          final pourcentage = ((recu / total) * 100).toStringAsFixed(0);
-          setState(() {
-            _sherpaStatus =
-                "Téléchargement du modèle vocal... $pourcentage%";
-          });
+        final request = http.Request('GET', Uri.parse(_sherpaModelUrl));
+        if (dejaRecu > 0) {
+          request.headers['Range'] = 'bytes=$dejaRecu-';
         }
+
+        final streamedResponse = await client.send(request);
+
+        if (streamedResponse.statusCode != 200 &&
+            streamedResponse.statusCode != 206) {
+          throw Exception(
+              "Échec du téléchargement du modèle (code ${streamedResponse.statusCode}).");
+        }
+
+        final reprisePossible = streamedResponse.statusCode == 206;
+        if (!reprisePossible && dejaRecu > 0) {
+          dejaRecu = 0;
+          await tempFile.writeAsBytes([]);
+        }
+
+        final sink = tempFile.openWrite(
+          mode: reprisePossible ? FileMode.append : FileMode.write,
+        );
+
+        int recu = dejaRecu;
+        final totalAnnonce = streamedResponse.contentLength ?? 0;
+        final total = reprisePossible
+            ? totalAnnonce + dejaRecu
+            : totalAnnonce;
+
+        await for (final chunk in streamedResponse.stream) {
+          sink.add(chunk);
+          recu += chunk.length;
+          final recuMo = (recu / (1024 * 1024)).toStringAsFixed(1);
+          if (total > 0) {
+            final totalMo = (total / (1024 * 1024)).toStringAsFixed(1);
+            final pourcentage = ((recu / total) * 100).toStringAsFixed(0);
+            setState(() {
+              _sherpaStatus =
+                  "Téléchargement du modèle vocal... $pourcentage% ($recuMo/$totalMo Mo)";
+            });
+          } else {
+            setState(() {
+              _sherpaStatus =
+                  "Téléchargement du modèle vocal... $recuMo Mo";
+            });
+          }
+        }
+        await sink.close();
+        succes = true;
+      } catch (e) {
+        setState(() {
+          _sherpaStatus =
+              "Connexion interrompue, nouvelle tentative ($tentative/$maxTentatives)...";
+        });
+        await Future.delayed(const Duration(seconds: 2));
+      } finally {
+        client.close();
       }
-      await sink.close();
-    } finally {
-      client.close();
+    }
+
+    if (!succes) {
+      throw Exception(
+          "Le téléchargement a échoué après $maxTentatives tentatives. Vérifie ta connexion et réessaie.");
     }
 
     setState(() {
