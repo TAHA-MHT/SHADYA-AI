@@ -209,7 +209,7 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
     super.initState();
 
     FirebaseAppCheck.instance.getToken(true);
-
+    sherpa_onnx.initBindings();
     _model = FirebaseAI.googleAI().generativeModel(
       model: 'gemini-3.5-flash',
       generationConfig: GenerationConfig(
