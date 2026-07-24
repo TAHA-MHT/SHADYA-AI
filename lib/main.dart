@@ -81,7 +81,6 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
 
   List<Contact> _contacts = [];
 
-  // Sherpa-ONNX (en cours de préparation, pas encore utilisé pour l'écoute)
   static const String _sherpaModelUrl =
       'https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-streaming-zipformer-fr-2023-04-14.tar.bz2';
   static const String _sherpaModelDirName =
@@ -272,21 +271,47 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
       _sherpaStatus = "Téléchargement du modèle vocal (une seule fois)...";
     });
 
-    final response = await http.get(Uri.parse(_sherpaModelUrl));
-    if (response.statusCode != 200) {
-      throw Exception(
-          "Échec du téléchargement du modèle (code ${response.statusCode}).");
+    final tempArchivePath = '${appDir.path}/sherpa_model.tar.bz2';
+    final tempFile = File(tempArchivePath);
+    await appDir.create(recursive: true);
+
+    final client = http.Client();
+    try {
+      final request = http.Request('GET', Uri.parse(_sherpaModelUrl));
+      final streamedResponse = await client.send(request);
+
+      if (streamedResponse.statusCode != 200) {
+        throw Exception(
+            "Échec du téléchargement du modèle (code ${streamedResponse.statusCode}).");
+      }
+
+      final sink = tempFile.openWrite();
+      int recu = 0;
+      final total = streamedResponse.contentLength ?? 0;
+
+      await for (final chunk in streamedResponse.stream) {
+        sink.add(chunk);
+        recu += chunk.length;
+        if (total > 0) {
+          final pourcentage = ((recu / total) * 100).toStringAsFixed(0);
+          setState(() {
+            _sherpaStatus =
+                "Téléchargement du modèle vocal... $pourcentage%";
+          });
+        }
+      }
+      await sink.close();
+    } finally {
+      client.close();
     }
 
     setState(() {
       _sherpaStatus = "Extraction du modèle vocal...";
     });
 
-    final Uint8List bz2Bytes = response.bodyBytes;
+    final bz2Bytes = await tempFile.readAsBytes();
     final tarBytes = BZip2Decoder().decodeBytes(bz2Bytes);
     final archive = TarDecoder().decodeBytes(tarBytes);
-
-    await appDir.create(recursive: true);
 
     for (final file in archive) {
       final filePath = '${appDir.path}/${file.name}';
@@ -298,6 +323,8 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
         await Directory(filePath).create(recursive: true);
       }
     }
+
+    await tempFile.delete();
 
     return modelDir.path;
   }
