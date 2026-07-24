@@ -23,7 +23,10 @@ dependencies:
   connectivity_plus: ^6.0.5
   flutter_contacts: ^1.1.9+2
   sherpa_onnx: ^1.13.2
-    
+  archive: ^3.6.1
+  path_provider: ^2.1.6
+  http: ^1.6.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
