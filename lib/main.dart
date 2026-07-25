@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show compute;
 import 'package:firebase_core/firebase_core.dart';
@@ -13,14 +14,50 @@ import 'package:intl/intl.dart';
 import 'package:sherpa_onnx/sherpa_onnx.dart' as sherpa_onnx;
 import 'package:path_provider/path_provider.dart';
 import 'package:archive/archive.dart';
+import 'package:archive/archive_io.dart';
 import 'package:file_picker/file_picker.dart';
 
 import 'package:firebase_app_check/firebase_app_check.dart';
 import 'firebase_options.dart';
 import 'l10n/app_localizations.dart';
 
+/// Écrit une entrée dans le fichier crash_log.txt (append), pour pouvoir
+/// consulter l'historique des erreurs via le panneau de debug caché,
+/// sans avoir besoin d'adb/Termux.
+Future<void> _ecrireCrashLog(String contenu) async {
+  try {
+    final appDir = await getApplicationSupportDirectory();
+    final file = File('${appDir.path}/crash_log.txt');
+    final horodatage = DateTime.now().toIso8601String();
+    await file.writeAsString(
+      '--- ERREUR $horodatage ---\n$contenu\n\n',
+      mode: FileMode.append,
+      flush: true,
+    );
+  } catch (_) {
+    // Si même l'écriture du log échoue, on ne peut rien faire de plus.
+  }
+}
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Capture les erreurs Flutter (widgets, build, etc.)
+  FlutterError.onError = (FlutterErrorDetails details) {
+    FlutterError.presentError(details);
+    _ecrireCrashLog('${details.exceptionAsString()}\n${details.stack}');
+  };
+
+  // Capture les erreurs Dart non gérées ailleurs (async, isolates racine, etc.)
+  // NOTE IMPORTANTE : si le système Android tue l'app pour manque de mémoire
+  // (OOM / low-memory killer), ce handler ne sera JAMAIS appelé, car le
+  // processus est tué brutalement avant que Dart ne puisse réagir. Dans ce
+  // cas, crash_log.txt restera vide malgré le crash.
+  PlatformDispatcher.instance.onError = (error, stack) {
+    _ecrireCrashLog('$error\n$stack');
+    return true;
+  };
+
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
@@ -31,24 +68,16 @@ Future<void> main() async {
   runApp(const ShadyaApp());
 }
 
+/// Extraction en streaming : lit, décompresse et écrit sur le disque par
+/// blocs successifs, sans jamais charger le fichier .tar.bz2 entier (398 Mo)
+/// en mémoire d'un coup — contrairement à l'ancienne méthode (decodeBytes)
+/// qui pouvait faire grimper l'utilisation RAM à plus d'1 Go.
 Future<void> _extraireArchiveIsolate(List<String> params) async {
   final archivePath = params[0];
   final outputDirPath = params[1];
 
-  final bz2Bytes = await File(archivePath).readAsBytes();
-  final tarBytes = BZip2Decoder().decodeBytes(bz2Bytes);
-  final archive = TarDecoder().decodeBytes(tarBytes);
-
-  for (final file in archive) {
-    final filePath = '$outputDirPath/${file.name}';
-    if (file.isFile) {
-      final outFile = File(filePath);
-      await outFile.create(recursive: true);
-      await outFile.writeAsBytes(file.content as List<int>);
-    } else {
-      await Directory(filePath).create(recursive: true);
-    }
-  }
+  await Directory(outputDirPath).create(recursive: true);
+  await extractFileToDisk(archivePath, outputDirPath);
 }
 
 class ShadyaApp extends StatelessWidget {
@@ -332,7 +361,13 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
 
       final appDir = await getApplicationSupportDirectory();
       final List<String> parametres = <String>[fichierChoisi, appDir.path];
-      await compute(_extraireArchiveIsolate, parametres);
+
+      try {
+        await compute(_extraireArchiveIsolate, parametres);
+      } catch (e, stack) {
+        await _ecrireCrashLog('Erreur extraction: $e\n$stack');
+        rethrow;
+      }
 
       final modelPathExistant = await _cheminModeleSiPresent();
 
@@ -390,12 +425,51 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
     }
   }
 
+  /// Affiche un diagnostic combiné : statut sherpa + contenu du fichier
+  /// crash_log.txt (s'il existe), directement dans le panneau caché.
   Future<void> _afficherDiagnosticSherpa() async {
     setState(() {
       _showDebugPanel = true;
-      _debugSecretInfo =
-          'Sherpa prêt: $_sherpaReady\n\nStatut: $_sherpaStatus';
+      _debugSecretInfo = 'Chargement du diagnostic...';
     });
+
+    String crashLogTexte = '(aucun fichier crash_log.txt trouvé)';
+    try {
+      final appDir = await getApplicationSupportDirectory();
+      final crashFile = File('${appDir.path}/crash_log.txt');
+      if (await crashFile.exists()) {
+        crashLogTexte = await crashFile.readAsString();
+        if (crashLogTexte.trim().isEmpty) {
+          crashLogTexte = '(fichier crash_log.txt vide)';
+        }
+      }
+    } catch (e) {
+      crashLogTexte = 'Erreur lecture crash_log.txt: $e';
+    }
+
+    setState(() {
+      _debugSecretInfo =
+          'Sherpa prêt: $_sherpaReady\n\nStatut: $_sherpaStatus\n\n--- crash_log.txt ---\n$crashLogTexte';
+    });
+  }
+
+  /// Efface le fichier crash_log.txt (utile pour repartir propre avant un
+  /// nouveau test).
+  Future<void> _effacerCrashLog() async {
+    try {
+      final appDir = await getApplicationSupportDirectory();
+      final crashFile = File('${appDir.path}/crash_log.txt');
+      if (await crashFile.exists()) {
+        await crashFile.delete();
+      }
+      setState(() {
+        _debugSecretInfo = 'crash_log.txt effacé.';
+      });
+    } catch (e) {
+      setState(() {
+        _debugSecretInfo = 'Erreur suppression crash_log.txt: $e';
+      });
+    }
   }
 
   Future<void> _fetchDebugSecret() async {
@@ -728,6 +802,14 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
                     _debugSecretInfo ?? '',
                     style: const TextStyle(fontSize: 11),
                     textAlign: TextAlign.center,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextButton(
+                  onPressed: _effacerCrashLog,
+                  child: const Text(
+                    "Effacer le fichier crash_log.txt",
+                    style: TextStyle(fontSize: 11),
                   ),
                 ),
               ],
