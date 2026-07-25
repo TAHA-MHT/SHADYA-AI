@@ -224,6 +224,9 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
     FirebaseAppCheck.instance.getToken(true);
 
     sherpa_onnx.initBindings();
+    FileDownloader().configure(
+      androidConfig: [(Config.runInForeground, Config.always)],
+    );
 
     _model = FirebaseAI.googleAI().generativeModel(
       model: 'gemini-3.5-flash',
