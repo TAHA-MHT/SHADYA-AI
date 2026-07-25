@@ -255,6 +255,7 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
 
   Future<String> _preparerModeleSherpa() async {
     final appDir = await getApplicationSupportDirectory();
+    await Permission.notification.request();
     final modelDir = Directory('${appDir.path}/$_sherpaModelDirName');
 
     if (await modelDir.exists()) {
