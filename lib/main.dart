@@ -13,7 +13,7 @@ import 'package:intl/intl.dart';
 import 'package:sherpa_onnx/sherpa_onnx.dart' as sherpa_onnx;
 import 'package:path_provider/path_provider.dart';
 import 'package:archive/archive.dart';
-import 'package:background_downloader/background_downloader.dart';
+import 'package:file_picker/file_picker.dart';
 
 import 'package:firebase_app_check/firebase_app_check.dart';
 import 'firebase_options.dart';
@@ -101,14 +101,13 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
 
   List<Contact> _contacts = [];
 
-  static const String _sherpaModelUrl =
-      'https://huggingface.co/xumo/onnx_models/resolve/main/sherpa-onnx-streaming-zipformer-fr-2023-04-14.tar.bz2';
   static const String _sherpaModelDirName =
       'sherpa-onnx-streaming-zipformer-fr-2023-04-14';
-  static const String _sherpaArchiveFilename = 'sherpa_model.tar.bz2';
 
   sherpa_onnx.OnlineRecognizer? _sherpaRecognizer;
   bool _sherpaReady = false;
+  bool _sherpaEnCours = false;
+  bool _sherpaNecessiteFichier = false;
   String _sherpaStatus = "Préparation de la reconnaissance vocale...";
 
   final List<Map<String, dynamic>> _commandesLocales = [
@@ -246,10 +245,6 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
 
     sherpa_onnx.initBindings();
 
-    FileDownloader().configure(
-      androidConfig: [(Config.runInForeground, Config.always)],
-    );
-
     _model = FirebaseAI.googleAI().generativeModel(
       model: 'gemini-3.5-flash',
       generationConfig: GenerationConfig(
@@ -275,66 +270,16 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
     }
   }
 
-  Future<String> _preparerModeleSherpa() async {
+  Future<String?> _cheminModeleSiPresent() async {
     final appDir = await getApplicationSupportDirectory();
-    await Permission.notification.request();
     final modelDir = Directory('${appDir.path}/$_sherpaModelDirName');
-
     if (await modelDir.exists()) {
       final tokensFile = File('${modelDir.path}/tokens.txt');
       if (await tokensFile.exists()) {
         return modelDir.path;
       }
     }
-
-    final connecte = await _estConnecte();
-    if (!connecte) {
-      throw Exception(
-          "Connecte-toi à internet une première fois pour activer la reconnaissance vocale.");
-    }
-
-    setState(() {
-      _sherpaStatus = "Téléchargement du modèle vocal (une seule fois)...";
-    });
-
-    final task = DownloadTask(
-      taskId: 'sherpa_model_download',
-      url: _sherpaModelUrl,
-      filename: _sherpaArchiveFilename,
-      baseDirectory: BaseDirectory.applicationSupport,
-      updates: Updates.progress,
-      allowPause: true,
-      retries: 6,
-    );
-
-    final result = await FileDownloader().download(
-      task,
-      onProgress: (progress) {
-        final pourcentage = (progress * 100).toStringAsFixed(0);
-        setState(() {
-          _sherpaStatus = "Téléchargement du modèle vocal... $pourcentage%";
-        });
-      },
-    );
-
-    if (result.status != TaskStatus.complete) {
-      final details = result.exception?.description ?? 'aucun détail';
-      throw Exception(
-          "Échec du téléchargement (statut: ${result.status}, détail: $details).");
-    }
-
-    setState(() {
-      _sherpaStatus =
-          "Extraction du modèle vocal (patiente, ça peut prendre une minute)...";
-    });
-
-    final archiveFilePath = await task.filePath();
-
-    await compute(_extraireArchiveIsolate, [archiveFilePath, appDir.path]);
-
-    await File(archiveFilePath).delete();
-
-    return modelDir.path;
+    return null;
   }
 
   Future<void> _initSherpa() async {
@@ -346,10 +291,73 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
       return;
     }
 
+    final modelPathExistant = await _cheminModeleSiPresent();
+
+    if (modelPathExistant != null) {
+      await _chargerModeleSherpa(modelPathExistant);
+    } else {
+      setState(() {
+        _sherpaNecessiteFichier = true;
+        _sherpaStatus =
+            "Télécharge le modèle vocal via Chrome, puis appuie sur le bouton ci-dessous pour le sélectionner.";
+      });
+    }
+  }
+
+  Future<void> _choisirEtExtraireModele() async {
     try {
-      final modelPath = await _preparerModeleSherpa();
+      setState(() {
+        _sherpaEnCours = true;
+        _sherpaStatus = "Ouverture du sélecteur de fichier...";
+      });
+
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.any,
+      );
+
+      if (result == null || result.files.single.path == null) {
+        setState(() {
+          _sherpaEnCours = false;
+          _sherpaStatus =
+              "Aucun fichier sélectionné. Appuie à nouveau sur le bouton pour réessayer.";
+        });
+        return;
+      }
+
+      final fichierChoisi = result.files.single.path!;
 
       setState(() {
+        _sherpaStatus =
+            "Extraction du modèle vocal (patiente, ça peut prendre une minute)...";
+      });
+
+      final appDir = await getApplicationSupportDirectory();
+      await compute(_extraireArchiveIsolate, [fichierChoisi, appDir.path]);
+
+      final modelPathExistant = await _cheminModeleSiPresent();
+
+      if (modelPathExistant == null) {
+        setState(() {
+          _sherpaEnCours = false;
+          _sherpaStatus =
+              "Le fichier sélectionné ne semble pas être le bon modèle. Vérifie que tu as choisi le fichier .tar.bz2 téléchargé, et réessaie.";
+        });
+        return;
+      }
+
+      await _chargerModeleSherpa(modelPathExistant);
+    } catch (e) {
+      setState(() {
+        _sherpaEnCours = false;
+        _sherpaStatus = "Erreur lors de la sélection/extraction: $e";
+      });
+    }
+  }
+
+  Future<void> _chargerModeleSherpa(String modelPath) async {
+    try {
+      setState(() {
+        _sherpaEnCours = true;
         _sherpaStatus = "Chargement du modèle vocal...";
       });
 
@@ -370,11 +378,14 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
 
       setState(() {
         _sherpaReady = true;
+        _sherpaEnCours = false;
+        _sherpaNecessiteFichier = false;
         _sherpaStatus = '';
       });
     } catch (e) {
       setState(() {
-        _sherpaStatus = "Erreur d'initialisation vocale: $e";
+        _sherpaEnCours = false;
+        _sherpaStatus = "Erreur de chargement du modèle: $e";
       });
     }
   }
@@ -690,6 +701,25 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
                   style: Theme.of(context).textTheme.titleLarge,
                 ),
               ),
+              if (_sherpaStatus.isNotEmpty && !_sherpaReady) ...[
+                const SizedBox(height: 16),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                  child: Text(
+                    _sherpaStatus,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(fontSize: 13, color: Colors.grey),
+                  ),
+                ),
+              ],
+              if (_sherpaNecessiteFichier && !_sherpaEnCours) ...[
+                const SizedBox(height: 16),
+                ElevatedButton(
+                  onPressed: _choisirEtExtraireModele,
+                  child: const Text(
+                      "Sélectionner le fichier du modèle vocal"),
+                ),
+              ],
               if (_showDebugPanel) ...[
                 const SizedBox(height: 24),
                 Padding(
