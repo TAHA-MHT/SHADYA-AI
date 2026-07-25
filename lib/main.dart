@@ -311,11 +311,9 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
         _sherpaStatus = "Ouverture du sélecteur de fichier...";
       });
 
-      final result = await FilePicker.platform.pickFiles(
-        type: FileType.any,
-      );
+      final result = await FilePicker.pickFiles();
 
-      if (result == null || result.files.single.path == null) {
+      if (result == null) {
         setState(() {
           _sherpaEnCours = false;
           _sherpaStatus =
@@ -324,7 +322,8 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
         return;
       }
 
-      final fichierChoisi = result.files.single.path!;
+      final xFile = result.files.first.xFile;
+      final fichierChoisi = xFile.path;
 
       setState(() {
         _sherpaStatus =
@@ -332,7 +331,8 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
       });
 
       final appDir = await getApplicationSupportDirectory();
-      await compute(_extraireArchiveIsolate, [fichierChoisi, appDir.path]);
+      final List<String> parametres = <String>[fichierChoisi, appDir.path];
+      await compute(_extraireArchiveIsolate, parametres);
 
       final modelPathExistant = await _cheminModeleSiPresent();
 
