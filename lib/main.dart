@@ -275,7 +275,7 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
       _sherpaStatus = "Téléchargement du modèle vocal (une seule fois)...";
     });
 
-    await FileDownloader().cancelTasksWithIds(['sherpa_model_download']);
+    
 
     final task = DownloadTask(
       taskId: 'sherpa_model_download',
