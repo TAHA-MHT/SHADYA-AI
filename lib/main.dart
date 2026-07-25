@@ -81,7 +81,7 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
   List<Contact> _contacts = [];
 
   static const String _sherpaModelUrl =
-      'https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-streaming-zipformer-fr-2023-04-14.tar.bz2';
+      'https://huggingface.co/xumo/onnx_models/resolve/main/sherpa-onnx-streaming-zipformer-fr-2023-04-14.tar.bz2';
   static const String _sherpaModelDirName =
       'sherpa-onnx-streaming-zipformer-fr-2023-04-14';
   static const String _sherpaArchiveFilename = 'sherpa_model.tar.bz2';
@@ -293,11 +293,11 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
       },
     );
 
-if (result.status != TaskStatus.complete) {
+    if (result.status != TaskStatus.complete) {
       final details = result.exception?.description ?? 'aucun détail';
       throw Exception(
           "Échec du téléchargement (statut: ${result.status}, détail: $details).");
-}
+    }
 
     setState(() {
       _sherpaStatus = "Extraction du modèle vocal...";
