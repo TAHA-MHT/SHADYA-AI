@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show compute;
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_ai/firebase_ai.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
@@ -28,6 +29,26 @@ Future<void> main() async {
   );
 
   runApp(const ShadyaApp());
+}
+
+Future<void> _extraireArchiveIsolate(List<String> params) async {
+  final archivePath = params[0];
+  final outputDirPath = params[1];
+
+  final bz2Bytes = await File(archivePath).readAsBytes();
+  final tarBytes = BZip2Decoder().decodeBytes(bz2Bytes);
+  final archive = TarDecoder().decodeBytes(tarBytes);
+
+  for (final file in archive) {
+    final filePath = '$outputDirPath/${file.name}';
+    if (file.isFile) {
+      final outFile = File(filePath);
+      await outFile.create(recursive: true);
+      await outFile.writeAsBytes(file.content as List<int>);
+    } else {
+      await Directory(filePath).create(recursive: true);
+    }
+  }
 }
 
 class ShadyaApp extends StatelessWidget {
@@ -224,6 +245,7 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
     FirebaseAppCheck.instance.getToken(true);
 
     sherpa_onnx.initBindings();
+
     FileDownloader().configure(
       androidConfig: [(Config.runInForeground, Config.always)],
     );
@@ -275,8 +297,6 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
       _sherpaStatus = "Téléchargement du modèle vocal (une seule fois)...";
     });
 
-    
-
     final task = DownloadTask(
       taskId: 'sherpa_model_download',
       url: _sherpaModelUrl,
@@ -304,27 +324,15 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
     }
 
     setState(() {
-      _sherpaStatus = "Extraction du modèle vocal...";
+      _sherpaStatus =
+          "Extraction du modèle vocal (patiente, ça peut prendre une minute)...";
     });
 
     final archiveFilePath = await task.filePath();
-    final archiveFile = File(archiveFilePath);
-    final bz2Bytes = await archiveFile.readAsBytes();
-    final tarBytes = BZip2Decoder().decodeBytes(bz2Bytes);
-    final archive = TarDecoder().decodeBytes(tarBytes);
 
-    for (final file in archive) {
-      final filePath = '${appDir.path}/${file.name}';
-      if (file.isFile) {
-        final outFile = File(filePath);
-        await outFile.create(recursive: true);
-        await outFile.writeAsBytes(file.content as List<int>);
-      } else {
-        await Directory(filePath).create(recursive: true);
-      }
-    }
+    await compute(_extraireArchiveIsolate, [archiveFilePath, appDir.path]);
 
-    await archiveFile.delete();
+    await File(archiveFilePath).delete();
 
     return modelDir.path;
   }
