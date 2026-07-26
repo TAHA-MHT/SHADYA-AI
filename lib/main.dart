@@ -399,10 +399,11 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
       final modelConfig = sherpa_onnx.OnlineModelConfig(
         transducer: sherpa_onnx.OnlineTransducerModelConfig(
           encoder:
-              '$modelPath/encoder-epoch-29-avg-9-with-averaged-model.onnx',
+              '$modelPath/encoder-epoch-29-avg-9-with-averaged-model.int8.onnx',
           decoder:
-              '$modelPath/decoder-epoch-29-avg-9-with-averaged-model.onnx',
-          joiner: '$modelPath/joiner-epoch-29-avg-9-with-averaged-model.onnx',
+              '$modelPath/decoder-epoch-29-avg-9-with-averaged-model.int8.onnx',
+          joiner:
+              '$modelPath/joiner-epoch-29-avg-9-with-averaged-model.int8.onnx',
         ),
         tokens: '$modelPath/tokens.txt',
         modelType: 'zipformer2',
