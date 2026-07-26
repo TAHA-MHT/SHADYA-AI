@@ -137,6 +137,7 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
   bool _sherpaReady = false;
   bool _sherpaEnCours = false;
   bool _sherpaNecessiteFichier = false;
+  String? _sherpaModelPathDetecte;
   String _sherpaStatus = "Préparation de la reconnaissance vocale...";
 
   final List<Map<String, dynamic>> _commandesLocales = [
@@ -323,7 +324,15 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
     final modelPathExistant = await _cheminModeleSiPresent();
 
     if (modelPathExistant != null) {
-      await _chargerModeleSherpa(modelPathExistant);
+      // IMPORTANT : on ne charge plus automatiquement le modèle au démarrage.
+      // Le chargement natif peut crasher l'app ; en le rendant manuel, on a
+      // le temps de consulter le diagnostic (appui long sur le titre) avant
+      // de relancer un chargement qui pourrait re-crasher.
+      setState(() {
+        _sherpaModelPathDetecte = modelPathExistant;
+        _sherpaStatus =
+            "Modèle détecté sur le disque. Appuie sur le bouton pour le charger (risque de crash si le modèle est corrompu).";
+      });
     } else {
       setState(() {
         _sherpaNecessiteFichier = true;
@@ -824,6 +833,16 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
                   onPressed: _choisirEtExtraireModele,
                   child: const Text(
                       "Sélectionner le fichier du modèle vocal"),
+                ),
+              ],
+              if (_sherpaModelPathDetecte != null &&
+                  !_sherpaEnCours &&
+                  !_sherpaReady) ...[
+                const SizedBox(height: 16),
+                ElevatedButton(
+                  onPressed: () =>
+                      _chargerModeleSherpa(_sherpaModelPathDetecte!),
+                  child: const Text("Charger le modèle vocal"),
                 ),
               ],
               if (_showDebugPanel) ...[
