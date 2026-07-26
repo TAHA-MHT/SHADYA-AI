@@ -418,6 +418,8 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
         ),
         tokens: '$modelPath/tokens.txt',
         modelType: 'zipformer2',
+        numThreads: 1,
+        debug: true,
       );
 
       final config = sherpa_onnx.OnlineRecognizerConfig(model: modelConfig);
