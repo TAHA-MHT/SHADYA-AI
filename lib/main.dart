@@ -130,8 +130,12 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
 
   List<Contact> _contacts = [];
 
+  // TEST DIAGNOSTIC : on pointe temporairement vers le modèle bilingue
+  // officiel (utilisé dans l'app d'exemple sherpa-onnx) pour vérifier si le
+  // crash vient du modèle français ou de sherpa-onnx en général sur cet
+  // appareil. À remettre sur le modèle français une fois le test terminé.
   static const String _sherpaModelDirName =
-      'sherpa-onnx-streaming-zipformer-fr-2023-04-14';
+      'sherpa-onnx-streaming-zipformer-bilingual-zh-en-2023-02-20';
 
   sherpa_onnx.OnlineRecognizer? _sherpaRecognizer;
   bool _sherpaReady = false;
@@ -409,12 +413,9 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
 
       final modelConfig = sherpa_onnx.OnlineModelConfig(
         transducer: sherpa_onnx.OnlineTransducerModelConfig(
-          encoder:
-              '$modelPath/encoder-epoch-29-avg-9-with-averaged-model.int8.onnx',
-          decoder:
-              '$modelPath/decoder-epoch-29-avg-9-with-averaged-model.onnx',
-          joiner:
-              '$modelPath/joiner-epoch-29-avg-9-with-averaged-model.int8.onnx',
+          encoder: '$modelPath/encoder-epoch-99-avg-1.int8.onnx',
+          decoder: '$modelPath/decoder-epoch-99-avg-1.onnx',
+          joiner: '$modelPath/joiner-epoch-99-avg-1.onnx',
         ),
         tokens: '$modelPath/tokens.txt',
         modelType: 'zipformer2',
