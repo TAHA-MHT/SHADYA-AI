@@ -1,6 +1,5 @@
 import 'dart:io';
 import 'dart:ui';
-import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show compute;
 import 'package:firebase_core/firebase_core.dart';
@@ -15,6 +14,7 @@ import 'package:intl/intl.dart';
 import 'package:sherpa_onnx/sherpa_onnx.dart' as sherpa_onnx;
 import 'package:path_provider/path_provider.dart';
 import 'package:archive/archive.dart';
+import 'package:archive/archive_io.dart';
 import 'package:file_picker/file_picker.dart';
 
 import 'package:firebase_app_check/firebase_app_check.dart';
@@ -68,34 +68,16 @@ Future<void> main() async {
   runApp(const ShadyaApp());
 }
 
+/// Extraction en streaming : lit, décompresse et écrit sur le disque par
+/// blocs successifs, sans jamais charger le fichier .tar.bz2 entier (398 Mo)
+/// en mémoire d'un coup — contrairement à l'ancienne méthode (decodeBytes)
+/// qui pouvait faire grimper l'utilisation RAM à plus d'1 Go.
 Future<void> _extraireArchiveIsolate(List<String> params) async {
   final archivePath = params[0];
   final outputDirPath = params[1];
 
-  // Étape 1 : lire le fichier compressé et le décompresser (bz2 -> tar brut)
-  var bz2Bytes = await File(archivePath).readAsBytes();
-  var tarBytes = BZip2Decoder().decodeBytes(bz2Bytes);
-
-  // On libère la référence au buffer compressé dès qu'on n'en a plus besoin,
-  // pour permettre au garbage collector de récupérer cette mémoire avant
-  // l'étape suivante (qui va elle-même consommer beaucoup de RAM).
-  bz2Bytes = Uint8List(0);
-
-  final archive = TarDecoder().decodeBytes(tarBytes);
-
-  // Idem : on libère le tar brut une fois l'archive parsée.
-  tarBytes = Uint8List(0);
-
-  for (final file in archive) {
-    final filePath = '$outputDirPath/${file.name}';
-    if (file.isFile) {
-      final outFile = File(filePath);
-      await outFile.create(recursive: true);
-      await outFile.writeAsBytes(file.content as List<int>);
-    } else {
-      await Directory(filePath).create(recursive: true);
-    }
-  }
+  await Directory(outputDirPath).create(recursive: true);
+  await extractFileToDisk(archivePath, outputDirPath);
 }
 
 class ShadyaApp extends StatelessWidget {
@@ -446,8 +428,9 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
     }
   }
 
-  /// Affiche un diagnostic combiné : statut sherpa + contenu du fichier
-  /// crash_log.txt (s'il existe), directement dans le panneau caché.
+  /// Affiche un diagnostic combiné : statut sherpa + liste des fichiers du
+  /// modèle extrait + contenu du fichier crash_log.txt (s'il existe),
+  /// directement dans le panneau caché.
   Future<void> _afficherDiagnosticSherpa() async {
     setState(() {
       _showDebugPanel = true;
@@ -468,9 +451,37 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
       crashLogTexte = 'Erreur lecture crash_log.txt: $e';
     }
 
+    String listeFichiersModele = '(dossier modèle introuvable)';
+    try {
+      final appDir = await getApplicationSupportDirectory();
+      final modelDir = Directory('${appDir.path}/$_sherpaModelDirName');
+      if (await modelDir.exists()) {
+        final entites = await modelDir.list().toList();
+        if (entites.isEmpty) {
+          listeFichiersModele = '(dossier vide)';
+        } else {
+          final lignes = <String>[];
+          for (final entite in entites) {
+            if (entite is File) {
+              final taille = await entite.length();
+              final nom = entite.path.split('/').last;
+              lignes.add('$nom — $taille octets');
+            } else {
+              final nom = entite.path.split('/').last;
+              lignes.add('$nom/ (dossier)');
+            }
+          }
+          lignes.sort();
+          listeFichiersModele = lignes.join('\n');
+        }
+      }
+    } catch (e) {
+      listeFichiersModele = 'Erreur listage dossier modèle: $e';
+    }
+
     setState(() {
       _debugSecretInfo =
-          'Sherpa prêt: $_sherpaReady\n\nStatut: $_sherpaStatus\n\n--- crash_log.txt ---\n$crashLogTexte';
+          'Sherpa prêt: $_sherpaReady\n\nStatut: $_sherpaStatus\n\n--- Fichiers dans $_sherpaModelDirName ---\n$listeFichiersModele\n\n--- crash_log.txt ---\n$crashLogTexte';
     });
   }
 
