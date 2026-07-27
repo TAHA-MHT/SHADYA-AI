@@ -11,7 +11,7 @@ import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter_contacts/flutter_contacts.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:intl/intl.dart';
-import 'package:vosk_flutter/vosk_flutter.dart' as vosk;
+import 'package:vosk_flutter_2/vosk_flutter.dart' as vosk;
 import 'package:tflite_flutter/tflite_flutter.dart' as tfl;
 import 'package:path_provider/path_provider.dart';
 import 'package:archive/archive.dart';
