@@ -11,7 +11,8 @@ import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter_contacts/flutter_contacts.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:intl/intl.dart';
-import 'package:sherpa_onnx/sherpa_onnx.dart' as sherpa_onnx;
+import 'package:vosk_flutter/vosk_flutter.dart' as vosk;
+import 'package:tflite_flutter/tflite_flutter.dart' as tfl;
 import 'package:path_provider/path_provider.dart';
 import 'package:archive/archive.dart';
 import 'package:archive/archive_io.dart';
@@ -69,9 +70,8 @@ Future<void> main() async {
 }
 
 /// Extraction en streaming : lit, décompresse et écrit sur le disque par
-/// blocs successifs, sans jamais charger le fichier .tar.bz2 entier (398 Mo)
-/// en mémoire d'un coup — contrairement à l'ancienne méthode (decodeBytes)
-/// qui pouvait faire grimper l'utilisation RAM à plus d'1 Go.
+/// blocs successifs, sans jamais charger le fichier archive entier en
+/// mémoire d'un coup.
 Future<void> _extraireArchiveIsolate(List<String> params) async {
   final archivePath = params[0];
   final outputDirPath = params[1];
@@ -130,19 +130,17 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
 
   List<Contact> _contacts = [];
 
-  // TEST DIAGNOSTIC : on pointe temporairement vers le modèle bilingue
-  // officiel (utilisé dans l'app d'exemple sherpa-onnx) pour vérifier si le
-  // crash vient du modèle français ou de sherpa-onnx en général sur cet
-  // appareil. À remettre sur le modèle français une fois le test terminé.
-  static const String _sherpaModelDirName =
-      'sherpa-onnx-streaming-zipformer-bilingual-zh-en-2023-02-20';
+  static const String _sherpaModelDirName = 'vosk-model-small-fr-0.22';
 
-  sherpa_onnx.OnlineRecognizer? _sherpaRecognizer;
+  final vosk.VoskFlutterPlugin _vosk = vosk.VoskFlutterPlugin.instance();
+  vosk.Model? _voskModel;
+  vosk.Recognizer? _voskRecognizer;
   bool _sherpaReady = false;
   bool _sherpaEnCours = false;
   bool _sherpaNecessiteFichier = false;
   String? _sherpaModelPathDetecte;
   String _sherpaStatus = "Préparation de la reconnaissance vocale...";
+  String? _tfliteTestResult;
 
   final List<Map<String, dynamic>> _commandesLocales = [
     {
@@ -277,8 +275,6 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
 
     FirebaseAppCheck.instance.getToken(true);
 
-    sherpa_onnx.initBindings();
-
     _model = FirebaseAI.googleAI().generativeModel(
       model: 'gemini-3.5-flash',
       generationConfig: GenerationConfig(
@@ -308,8 +304,11 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
     final appDir = await getApplicationSupportDirectory();
     final modelDir = Directory('${appDir.path}/$_sherpaModelDirName');
     if (await modelDir.exists()) {
-      final tokensFile = File('${modelDir.path}/tokens.txt');
-      if (await tokensFile.exists()) {
+      // Un modèle Vosk contient un dossier "am" (acoustic model) ; on
+      // vérifie sa présence pour confirmer une extraction complète.
+      final amDir = Directory('${modelDir.path}/am');
+      final confDir = Directory('${modelDir.path}/conf');
+      if (await amDir.exists() || await confDir.exists()) {
         return modelDir.path;
       }
     }
@@ -390,7 +389,7 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
         setState(() {
           _sherpaEnCours = false;
           _sherpaStatus =
-              "Le fichier sélectionné ne semble pas être le bon modèle. Vérifie que tu as choisi le fichier .tar.bz2 téléchargé, et réessaie.";
+              "Le fichier sélectionné ne semble pas être le bon modèle. Vérifie que tu as choisi le fichier .zip du modèle Vosk téléchargé, et réessaie.";
         });
         return;
       }
@@ -404,27 +403,55 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
     }
   }
 
+  /// TEST DIAGNOSTIC ISOLÉ : essaie de charger un petit modèle TensorFlow
+  /// Lite (bibliothèque native complètement différente de sherpa-onnx et
+  /// Vosk) pour vérifier si TOUTE bibliothèque native lourde crashe sur cet
+  /// appareil, ou si c'est spécifique aux moteurs de reconnaissance vocale.
+  Future<void> _testerTflite() async {
+    setState(() {
+      _tfliteTestResult = "Sélection du fichier .tflite...";
+    });
+    try {
+      final result = await FilePicker.pickFiles();
+      if (result == null) {
+        setState(() {
+          _tfliteTestResult = "Aucun fichier sélectionné.";
+        });
+        return;
+      }
+      final path = result.files.first.xFile.path;
+      setState(() {
+        _tfliteTestResult = "Chargement de l'interpréteur TFLite...";
+      });
+
+      final interpreter = tfl.Interpreter.fromFile(File(path));
+      final nombreEntrees = interpreter.getInputTensors().length;
+      interpreter.close();
+
+      setState(() {
+        _tfliteTestResult =
+            "SUCCÈS : le modèle TFLite a été chargé sans crash (entrées: $nombreEntrees). Donc les bibliothèques natives lourdes fonctionnent en général sur cet appareil ; le problème est spécifique aux moteurs de reconnaissance vocale (sherpa-onnx et Vosk).";
+      });
+    } catch (e, stack) {
+      await _ecrireCrashLog('Erreur test TFLite: $e\n$stack');
+      setState(() {
+        _tfliteTestResult = "Erreur (catchable, pas un crash total) : $e";
+      });
+    }
+  }
+
   Future<void> _chargerModeleSherpa(String modelPath) async {
     try {
       setState(() {
         _sherpaEnCours = true;
-        _sherpaStatus = "Chargement du modèle vocal...";
+        _sherpaStatus = "Chargement du modèle vocal (Vosk)...";
       });
 
-      final modelConfig = sherpa_onnx.OnlineModelConfig(
-        transducer: sherpa_onnx.OnlineTransducerModelConfig(
-          encoder: '$modelPath/encoder-epoch-99-avg-1.int8.onnx',
-          decoder: '$modelPath/decoder-epoch-99-avg-1.onnx',
-          joiner: '$modelPath/joiner-epoch-99-avg-1.onnx',
-        ),
-        tokens: '$modelPath/tokens.txt',
-        modelType: 'zipformer2',
-        numThreads: 1,
-        debug: true,
+      _voskModel = await _vosk.createModel(modelPath);
+      _voskRecognizer = await _vosk.createRecognizer(
+        model: _voskModel!,
+        sampleRate: 16000,
       );
-
-      final config = sherpa_onnx.OnlineRecognizerConfig(model: modelConfig);
-      _sherpaRecognizer = sherpa_onnx.OnlineRecognizer(config);
 
       setState(() {
         _sherpaReady = true;
@@ -440,9 +467,8 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
     }
   }
 
-  /// Affiche un diagnostic combiné : statut sherpa + liste des fichiers du
-  /// modèle extrait + contenu du fichier crash_log.txt (s'il existe),
-  /// directement dans le panneau caché.
+  /// Affiche un diagnostic combiné : statut sherpa + contenu du fichier
+  /// crash_log.txt (s'il existe), directement dans le panneau caché.
   Future<void> _afficherDiagnosticSherpa() async {
     setState(() {
       _showDebugPanel = true;
@@ -846,6 +872,23 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
                   onPressed: () =>
                       _chargerModeleSherpa(_sherpaModelPathDetecte!),
                   child: const Text("Charger le modèle vocal"),
+                ),
+              ],
+              const SizedBox(height: 24),
+              OutlinedButton(
+                onPressed: _testerTflite,
+                child: const Text(
+                    "TEST DIAGNOSTIC : charger un modèle TFLite"),
+              ),
+              if (_tfliteTestResult != null) ...[
+                const SizedBox(height: 12),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                  child: Text(
+                    _tfliteTestResult!,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(fontSize: 12),
+                  ),
                 ),
               ],
               if (_showDebugPanel) ...[
