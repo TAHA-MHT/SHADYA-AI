@@ -15,11 +15,19 @@ subprojects {
                     targetCompatibility = JavaVersion.VERSION_17
                 }
                 // Certains anciens plugins (ex: vosk_flutter_2) ne déclarent pas
-                // de "namespace", requis par les versions récentes d'Android
-                // Gradle Plugin. On lui en attribue un automatiquement s'il en
-                // manque un, pour éviter que le build échoue.
+                // de "namespace" (requis par les versions récentes d'AGP), mais
+                // ont encore un attribut "package" dans leur AndroidManifest.xml.
+                // On lit ce package existant et on l'utilise comme namespace,
+                // pour que les deux correspondent exactement.
                 if (namespace == null) {
-                    namespace = "com.shadyaai.vendor.${project.name.replace("-", "_").replace(".", "_")}"
+                    val manifestFile = project.file("src/main/AndroidManifest.xml")
+                    if (manifestFile.exists()) {
+                        val manifestText = manifestFile.readText()
+                        val match = Regex("package=\"([^\"]+)\"").find(manifestText)
+                        if (match != null) {
+                            namespace = match.groupValues[1]
+                        }
+                    }
                 }
             }
         }
