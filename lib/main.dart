@@ -11,7 +11,7 @@ import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter_contacts/flutter_contacts.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:intl/intl.dart';
-import 'package:vosk_flutter_2/vosk_flutter_2.dart' as vosk;
+import 'package:vosk_flutter_2/vosk_flutter.dart' as vosk;
 import 'package:tflite_flutter/tflite_flutter.dart' as tfl;
 import 'package:path_provider/path_provider.dart';
 import 'package:archive/archive.dart';
@@ -70,8 +70,9 @@ Future<void> main() async {
 }
 
 /// Extraction en streaming : lit, décompresse et écrit sur le disque par
-/// blocs successifs, sans jamais charger le fichier archive entier en
-/// mémoire d'un coup.
+/// blocs successifs, sans jamais charger le fichier .tar.bz2 entier (398 Mo)
+/// en mémoire d'un coup — contrairement à l'ancienne méthode (decodeBytes)
+/// qui pouvait faire grimper l'utilisation RAM à plus d'1 Go.
 Future<void> _extraireArchiveIsolate(List<String> params) async {
   final archivePath = params[0];
   final outputDirPath = params[1];
@@ -135,6 +136,7 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
   final vosk.VoskFlutterPlugin _vosk = vosk.VoskFlutterPlugin.instance();
   vosk.Model? _voskModel;
   vosk.Recognizer? _voskRecognizer;
+  vosk.SpeechService? _voskSpeechService;
   bool _sherpaReady = false;
   bool _sherpaEnCours = false;
   bool _sherpaNecessiteFichier = false;
@@ -440,6 +442,20 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
     }
   }
 
+  /// Extrait le champ "partial" d'une chaîne JSON renvoyée par Vosk en cours
+  /// de reconnaissance (résultat provisoire, pas encore final).
+  String _extraireTextePartiel(String jsonBrut) {
+    final match = RegExp(r'"partial"\s*:\s*"([^"]*)"').firstMatch(jsonBrut);
+    return match?.group(1) ?? '';
+  }
+
+  /// Extrait le champ "text" d'une chaîne JSON renvoyée par Vosk une fois la
+  /// reconnaissance terminée (résultat final).
+  String _extraireTexteFinal(String jsonBrut) {
+    final match = RegExp(r'"text"\s*:\s*"([^"]*)"').firstMatch(jsonBrut);
+    return match?.group(1) ?? '';
+  }
+
   Future<void> _chargerModeleSherpa(String modelPath) async {
     try {
       setState(() {
@@ -452,6 +468,26 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
         model: _voskModel!,
         sampleRate: 16000,
       );
+      _voskSpeechService = await _vosk.initSpeechService(_voskRecognizer!);
+
+      _voskSpeechService!.onPartial().listen((partial) {
+        // "partial" est une chaîne JSON du type {"partial": "texte..."}
+        final texte = _extraireTextePartiel(partial);
+        if (texte.isNotEmpty) {
+          setState(() {
+            _recognizedText = texte;
+          });
+        }
+      });
+
+      _voskSpeechService!.onResult().listen((result) {
+        // "result" est une chaîne JSON du type {"text": "texte final"}
+        final texte = _extraireTexteFinal(result);
+        if (texte.isNotEmpty) {
+          setState(() => _isListening = false);
+          _analyserEtRepondre(texte);
+        }
+      });
 
       setState(() {
         _sherpaReady = true;
@@ -787,6 +823,24 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
   }
 
   void _toggleListening() async {
+    // Priorité au moteur offline (Vosk) s'il est chargé et prêt : ça permet
+    // à la reconnaissance vocale de fonctionner même sans connexion internet.
+    if (_sherpaReady && _voskSpeechService != null) {
+      if (_isListening) {
+        await _voskSpeechService!.stop();
+        setState(() => _isListening = false);
+      } else {
+        setState(() {
+          _isListening = true;
+          _recognizedText = '';
+        });
+        await _voskSpeechService!.start();
+      }
+      return;
+    }
+
+    // Sinon, on retombe sur la reconnaissance vocale en ligne (Google) comme
+    // avant.
     if (!_speechEnabled) {
       await _speak(AppLocalizations.of(context)!.microphonePermissionDenied);
       return;
