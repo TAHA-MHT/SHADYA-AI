@@ -14,6 +14,13 @@ subprojects {
                     sourceCompatibility = JavaVersion.VERSION_17
                     targetCompatibility = JavaVersion.VERSION_17
                 }
+                // Certains anciens plugins (ex: vosk_flutter_2) ne déclarent pas
+                // de "namespace", requis par les versions récentes d'Android
+                // Gradle Plugin. On lui en attribue un automatiquement s'il en
+                // manque un, pour éviter que le build échoue.
+                if (namespace == null) {
+                    namespace = "com.shadyaai.vendor.${project.name.replace("-", "_").replace(".", "_")}"
+                }
             }
         }
 
