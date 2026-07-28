@@ -484,6 +484,11 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
         // "result" est une chaîne JSON du type {"text": "texte final"}
         final texte = _extraireTexteFinal(result);
         if (texte.isNotEmpty) {
+          // IMPORTANT : on arrête vraiment l'écoute native ici, sinon Vosk
+          // continue de capter l'audio après la reconnaissance et finit par
+          // entendre la propre voix TTS de Shadya, ce qui redéclenche des
+          // "questions" fantômes et fait boucler les réponses.
+          _voskSpeechService!.stop();
           setState(() => _isListening = false);
           _analyserEtRepondre(texte);
         }
