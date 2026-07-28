@@ -52,9 +52,16 @@ jobs:
             -alias "$KEY_ALIAS" \
             -storepass "$STORE_PASSWORD" | grep -A1 "SHA256"
 
+      - name: Clean pub cache et reinstaller les dependances
+        run: |
+          flutter clean
+          rm -rf ~/.pub-cache
+          flutter pub get
+          echo "----- Verification presence de vosk_flutter.dart -----"
+          find ~/.pub-cache -path "*vosk_flutter_2*" -name "*.dart" || echo "AUCUN fichier vosk_flutter_2 trouve dans le cache !"
+
       - name: Build APK
         run: |
-          flutter pub get
           flutter build apk --release --verbose > build_log.txt 2>&1 || true
           echo "===================================================="
           echo "===== ERREURS DETECTEES AUTOMATIQUEMENT ====="
