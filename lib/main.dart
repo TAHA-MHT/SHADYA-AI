@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:ui';
 import 'package:flutter/material.dart';
@@ -11,6 +13,7 @@ import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter_contacts/flutter_contacts.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:intl/intl.dart';
+import 'package:http/http.dart' as http;
 import 'package:vosk_flutter_2/vosk_flutter_2.dart' as vosk;
 import 'package:tflite_flutter/tflite_flutter.dart' as tfl;
 import 'package:path_provider/path_provider.dart';
@@ -144,6 +147,18 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
   String _sherpaStatus = "Préparation de la reconnaissance vocale...";
   String? _tfliteTestResult;
 
+  // Ville utilisée par défaut pour la météo si l'utilisateur n'en précise
+  // pas une explicitement (ex: "météo à Paris").
+  final String _villeParDefaut = "N'Djamena";
+
+  // Minuteur actif (un seul à la fois pour l'instant).
+  Timer? _minuteurActif;
+
+  // Dictionnaire nombres-en-lettres -> valeur numérique, construit une seule
+  // fois au démarrage. Nécessaire car Vosk transcrit les nombres dits à
+  // l'oral en toutes lettres ("vingt-trois"), pas en chiffres ("23").
+  late final Map<String, int> _dictionnaireNombres = _construireDictionnaireNombres();
+
   final List<Map<String, dynamic>> _commandesLocales = [
     {
       'motsCles': ['lumière', 'lumiere'],
@@ -262,12 +277,12 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
     {
       'motsCles': ['que peux-tu faire', 'que sais-tu faire', 'tu sers à quoi'],
       'reponse':
-          "Je peux contrôler des appareils chez toi, appeler tes contacts, et répondre à tes questions.",
+          "Je peux contrôler des appareils chez toi, appeler tes contacts, calculer, te donner la météo, lancer un minuteur, et répondre à tes questions.",
     },
     {
       'motsCles': ['tu es hors ligne', 'pas de connexion', 'pas internet'],
       'reponse':
-          "Je fonctionne même sans connexion pour les commandes de base comme la domotique.",
+          "Je fonctionne même sans connexion pour les commandes de base comme la domotique, les calculs et les minuteurs.",
     },
   ];
 
@@ -285,6 +300,12 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
     );
 
     _setup();
+  }
+
+  @override
+  void dispose() {
+    _minuteurActif?.cancel();
+    super.dispose();
   }
 
   Future<void> _setup() async {
@@ -613,6 +634,287 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
     return !connectivityResult.contains(ConnectivityResult.none);
   }
 
+  // ---------------------------------------------------------------------
+  // NOUVEAU : conversion des nombres dits en toutes lettres vers un entier.
+  // Nécessaire car Vosk transcrit la parole en mots ("vingt-trois"), pas en
+  // chiffres ("23"), donc le calculateur et le minuteur doivent comprendre
+  // les nombres écrits en français.
+  // ---------------------------------------------------------------------
+  Map<String, int> _construireDictionnaireNombres() {
+    final dict = <String, int>{};
+    const unites = [
+      'zéro', 'un', 'deux', 'trois', 'quatre', 'cinq', 'six', 'sept', 'huit', 'neuf'
+    ];
+    const onzeADixNeuf = [
+      'dix', 'onze', 'douze', 'treize', 'quatorze', 'quinze', 'seize',
+      'dix sept', 'dix huit', 'dix neuf'
+    ];
+
+    for (int i = 0; i < 10; i++) {
+      dict[unites[i]] = i;
+    }
+    for (int i = 0; i < 10; i++) {
+      dict[onzeADixNeuf[i]] = 10 + i;
+    }
+
+    const dizaines = {20: 'vingt', 30: 'trente', 40: 'quarante', 50: 'cinquante', 60: 'soixante'};
+    dizaines.forEach((valeur, mot) {
+      dict[mot] = valeur;
+      for (int u = 1; u < 10; u++) {
+        final liaison = (u == 1) ? 'et un' : unites[u];
+        dict['$mot $liaison'] = valeur + u;
+      }
+    });
+
+    // 70-79 : soixante + dix..dix-neuf (irrégulier en français standard)
+    dict['soixante dix'] = 70;
+    dict['soixante et onze'] = 71;
+    for (int u = 2; u < 10; u++) {
+      dict['soixante ${onzeADixNeuf[u]}'] = 70 + u;
+    }
+
+    // 80-89 : quatre-vingt + unité (pas de "et" en français standard)
+    dict['quatre vingt'] = 80;
+    dict['quatre vingts'] = 80;
+    for (int u = 1; u < 10; u++) {
+      dict['quatre vingt ${unites[u]}'] = 80 + u;
+    }
+
+    // 90-99 : quatre-vingt + dix..dix-neuf
+    for (int u = 0; u < 10; u++) {
+      dict['quatre vingt ${onzeADixNeuf[u]}'] = 90 + u;
+    }
+
+    return dict;
+  }
+
+  /// Tente d'extraire un nombre entier à partir d'un morceau de texte : soit
+  /// des chiffres directs ("23"), soit des nombres en toutes lettres
+  /// ("vingt-trois"), avec un support basique de "cent"/"cents".
+  int? _extraireNombreDepuisMots(String texteBrut) {
+    var texte = texteBrut.toLowerCase().replaceAll('-', ' ').trim();
+    texte = texte.replaceAll(RegExp(r'\s+'), ' ');
+    if (texte.isEmpty) return null;
+
+    final direct = int.tryParse(texte);
+    if (direct != null) return direct;
+
+    final centMatch = RegExp(r'^(.*?)\s*cents?\s*(.*)$').firstMatch(texte);
+    if (centMatch != null) {
+      final avant = centMatch.group(1)!.trim();
+      final apres = centMatch.group(2)!.trim();
+      final multiplicateur = avant.isEmpty ? 1 : (_dictionnaireNombres[avant] ?? 1);
+      final reste = apres.isEmpty
+          ? 0
+          : (_dictionnaireNombres[apres] ?? int.tryParse(apres) ?? 0);
+      return multiplicateur * 100 + reste;
+    }
+
+    return _dictionnaireNombres[texte];
+  }
+
+  // ---------------------------------------------------------------------
+  // NOUVEAU : calculs simples ("combien font 12 fois 8")
+  // ---------------------------------------------------------------------
+  String? _chercherCalcul(String texte) {
+    final texteMin = texte.toLowerCase();
+
+    const motsDeclencheurs = ['combien font', 'combien fait', 'combien ça fait', "c'est combien"];
+    final aOperateur = RegExp(r'\b(plus|moins|fois|multiplié par|divisé par|divise par)\b').hasMatch(texteMin);
+    final estCalcul = motsDeclencheurs.any((m) => texteMin.contains(m)) || aOperateur;
+    if (!estCalcul) return null;
+
+    const operateurs = {
+      'multiplié par': '×',
+      'divisé par': '÷',
+      'divise par': '÷',
+      'fois': '×',
+      'plus': '+',
+      'moins': '−',
+    };
+
+    for (final entree in operateurs.entries) {
+      final motOperateur = entree.key;
+      final indexOp = texteMin.indexOf(' $motOperateur ');
+      if (indexOp == -1) continue;
+
+      var partieGauche = texteMin.substring(0, indexOp);
+      for (final mot in motsDeclencheurs) {
+        partieGauche = partieGauche.replaceAll(mot, '');
+      }
+      partieGauche = partieGauche.trim();
+
+      final partieDroite = texteMin.substring(indexOp + motOperateur.length + 2).trim();
+
+      final nombre1 = _extraireNombreDepuisMots(partieGauche);
+      final nombre2 = _extraireNombreDepuisMots(partieDroite);
+      if (nombre1 == null || nombre2 == null) continue;
+
+      double resultat;
+      switch (entree.value) {
+        case '+':
+          resultat = (nombre1 + nombre2).toDouble();
+          break;
+        case '−':
+          resultat = (nombre1 - nombre2).toDouble();
+          break;
+        case '×':
+          resultat = (nombre1 * nombre2).toDouble();
+          break;
+        case '÷':
+          if (nombre2 == 0) return "Je ne peux pas diviser par zéro.";
+          resultat = nombre1 / nombre2;
+          break;
+        default:
+          continue;
+      }
+
+      final resultatFormate = resultat == resultat.roundToDouble()
+          ? resultat.toInt().toString()
+          : resultat.toStringAsFixed(2);
+
+      return "$nombre1 ${entree.value} $nombre2, ça fait $resultatFormate.";
+    }
+
+    return null;
+  }
+
+  // ---------------------------------------------------------------------
+  // NOUVEAU : minuteur vocal ("lance un minuteur de 5 minutes")
+  // ---------------------------------------------------------------------
+  bool _estCommandeMinuteur(String texte) {
+    final t = texte.toLowerCase();
+    return t.contains('minuteur') ||
+        t.contains('minuterie') ||
+        (t.contains('lance') && (t.contains('minute') || t.contains('seconde')));
+  }
+
+  String _demarrerMinuteur(String texte) {
+    final t = texte.toLowerCase().replaceAll('-', ' ');
+
+    int totalSecondes = 0;
+
+    final matchMin = RegExp(r'([a-zà-ÿ\s\d]+?)\s*minutes?\b').firstMatch(t);
+    if (matchMin != null) {
+      var segment = matchMin.group(1)!.trim();
+      segment = segment.replaceFirst(RegExp(r"^(de|d'|un|une)\s+"), '').trim();
+      final n = _extraireNombreDepuisMots(segment);
+      if (n != null) totalSecondes += n * 60;
+    }
+
+    final matchSec = RegExp(r'([a-zà-ÿ\s\d]+?)\s*secondes?\b').firstMatch(t);
+    if (matchSec != null) {
+      var segment = matchSec.group(1)!.trim();
+      segment = segment.replaceFirst(RegExp(r"^(de|d'|un|une)\s+"), '').trim();
+      final n = _extraireNombreDepuisMots(segment);
+      if (n != null) totalSecondes += n;
+    }
+
+    if (totalSecondes <= 0) {
+      return "Je n'ai pas compris la durée du minuteur. Essaie par exemple : lance un minuteur de cinq minutes.";
+    }
+
+    _minuteurActif?.cancel();
+    final dureeCapturee = totalSecondes;
+    _minuteurActif = Timer(Duration(seconds: dureeCapturee), () {
+      if (mounted) {
+        setState(() {
+          _recognizedText = "⏰ Le minuteur est terminé.";
+        });
+        _speak("Le minuteur est terminé.");
+      }
+    });
+
+    final dureeTexte = totalSecondes >= 60
+        ? "${totalSecondes ~/ 60} minute(s)"
+            "${totalSecondes % 60 > 0 ? ' et ${totalSecondes % 60} seconde(s)' : ''}"
+        : "$totalSecondes seconde(s)";
+
+    return "D'accord, minuteur lancé pour $dureeTexte.";
+  }
+
+  // ---------------------------------------------------------------------
+  // NOUVEAU : météo via l'API gratuite Open-Meteo (aucune clé requise)
+  // ---------------------------------------------------------------------
+  String _descriptionMeteo(int code) {
+    if (code == 0) return "ciel dégagé";
+    if (code <= 3) return "partiellement nuageux";
+    if (code <= 48) return "brumeux";
+    if (code <= 57) return "bruine";
+    if (code <= 67) return "pluie";
+    if (code <= 77) return "neige";
+    if (code <= 82) return "averses";
+    if (code <= 99) return "orageux";
+    return "conditions variables";
+  }
+
+  Future<String> _obtenirMeteo(String texte) async {
+    var ville = _villeParDefaut;
+    final matchVille = RegExp(r'(?:météo|meteo).*?(?:à|a|de|pour)\s+([a-zà-ÿ\s\-]+)$')
+        .firstMatch(texte.toLowerCase());
+    if (matchVille != null) {
+      ville = matchVille.group(1)!.trim();
+    }
+
+    try {
+      final geoUrl = Uri.parse(
+          'https://geocoding-api.open-meteo.com/v1/search?name=${Uri.encodeComponent(ville)}&count=1&language=fr&format=json');
+      final geoResponse = await http.get(geoUrl).timeout(const Duration(seconds: 8));
+      final geoData = jsonDecode(geoResponse.body) as Map<String, dynamic>;
+
+      final resultats = geoData['results'] as List<dynamic>?;
+      if (resultats == null || resultats.isEmpty) {
+        return "Je n'ai pas trouvé la ville \"$ville\" pour la météo.";
+      }
+
+      final lieu = resultats.first as Map<String, dynamic>;
+      final lat = lieu['latitude'];
+      final lon = lieu['longitude'];
+      final nomVilleTrouvee = lieu['name'];
+
+      final meteoUrl = Uri.parse(
+          'https://api.open-meteo.com/v1/forecast?latitude=$lat&longitude=$lon&current_weather=true');
+      final meteoResponse = await http.get(meteoUrl).timeout(const Duration(seconds: 8));
+      final meteoData = jsonDecode(meteoResponse.body) as Map<String, dynamic>;
+
+      final tempsActuel = meteoData['current_weather'] as Map<String, dynamic>;
+      final temperature = tempsActuel['temperature'];
+      final codeWeather = (tempsActuel['weathercode'] as num).toInt();
+
+      final description = _descriptionMeteo(codeWeather);
+
+      return "À $nomVilleTrouvee, il fait actuellement $temperature degrés, $description.";
+    } catch (e) {
+      return "Je n'ai pas pu récupérer la météo pour le moment.";
+    }
+  }
+
+  // ---------------------------------------------------------------------
+  // NOUVEAU : recherche d'information via Gemini ("cherche-moi...")
+  // ---------------------------------------------------------------------
+  bool _estCommandeRecherche(String texte) {
+    final t = texte.toLowerCase();
+    return t.contains('cherche moi') ||
+        t.contains('cherche-moi') ||
+        t.contains('recherche') ||
+        (t.contains('cherche') && !t.contains('chercheur'));
+  }
+
+  Future<String> _rechercheGemini(String texte) async {
+    try {
+      final prompt =
+          "L'utilisateur te demande de faire une recherche d'information sur : \"$texte\". "
+          "Réponds avec les informations les plus précises et utiles que tu connais, "
+          "de façon claire et concise (3-4 phrases maximum). "
+          "Si tu n'es pas certain de l'information la plus récente sur ce sujet, précise-le brièvement.";
+      final content = [Content.text(prompt)];
+      final response = await _model.generateContent(content);
+      return response.text ?? "Je n'ai pas trouvé d'information sur ce sujet.";
+    } catch (e) {
+      return "Je n'ai pas pu effectuer la recherche pour le moment.";
+    }
+  }
+
   String? _chercherCommandeLocale(String texte) {
     final texteMinuscule = texte.toLowerCase();
     for (final commande in _commandesLocales) {
@@ -771,6 +1073,73 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
         _recognizedText = "Shadya : $reponseSysteme";
       });
       await _speak(reponseSysteme);
+      return;
+    }
+
+    // NOUVEAU : calcul simple (100% local, aucune connexion requise)
+    final resultatCalcul = _chercherCalcul(texteEntendu);
+    if (resultatCalcul != null) {
+      setState(() {
+        _recognizedText = "Shadya : $resultatCalcul";
+      });
+      await _speak(resultatCalcul);
+      return;
+    }
+
+    // NOUVEAU : minuteur vocal (100% local, aucune connexion requise)
+    if (_estCommandeMinuteur(texteEntendu)) {
+      final resultatMinuteur = _demarrerMinuteur(texteEntendu);
+      setState(() {
+        _recognizedText = "Shadya : $resultatMinuteur";
+      });
+      await _speak(resultatMinuteur);
+      return;
+    }
+
+    // NOUVEAU : météo (nécessite une connexion internet)
+    final texteMinuscule = texteEntendu.toLowerCase();
+    final estMeteo = texteMinuscule.contains('météo') ||
+        texteMinuscule.contains('meteo') ||
+        texteMinuscule.contains('quel temps');
+    if (estMeteo) {
+      final connecteMeteo = await _estConnecte();
+      if (!connecteMeteo) {
+        const messageMeteo =
+            "La météo nécessite une connexion internet, et je n'en ai pas actuellement.";
+        setState(() {
+          _recognizedText = messageMeteo;
+        });
+        await _speak(messageMeteo);
+        return;
+      }
+      final resultatMeteo = await _obtenirMeteo(texteEntendu);
+      setState(() {
+        _recognizedText = "Shadya : $resultatMeteo";
+      });
+      await _speak(resultatMeteo);
+      return;
+    }
+
+    // NOUVEAU : recherche d'information via Gemini (nécessite une connexion)
+    if (_estCommandeRecherche(texteEntendu)) {
+      final connecteRecherche = await _estConnecte();
+      if (!connecteRecherche) {
+        const messageRecherche =
+            "La recherche nécessite une connexion internet, et je n'en ai pas actuellement.";
+        setState(() {
+          _recognizedText = messageRecherche;
+        });
+        await _speak(messageRecherche);
+        return;
+      }
+      setState(() {
+        _recognizedText = "Shadya recherche...";
+      });
+      final resultatRecherche = await _rechercheGemini(texteEntendu);
+      setState(() {
+        _recognizedText = "Shadya : $resultatRecherche";
+      });
+      await _speak(resultatRecherche);
       return;
     }
 
