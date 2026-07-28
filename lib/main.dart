@@ -713,6 +713,34 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
     return _dictionnaireNombres[texte];
   }
 
+  /// Cherche un nombre à l'intérieur d'un segment de texte qui peut contenir
+  /// des mots parasites (articles, mots de liaison, fin de phrase type "font
+  /// combien"). Essaie des fenêtres de 4, 3, 2 puis 1 mot, en partant soit du
+  /// début soit de la fin du segment, jusqu'à trouver une correspondance
+  /// valide dans le dictionnaire de nombres.
+  int? _extraireNombreDansSegment(String segment, {required bool depuisLaFin}) {
+    final mots = segment
+        .trim()
+        .split(RegExp(r'\s+'))
+        .where((m) => m.isNotEmpty)
+        .toList();
+    if (mots.isEmpty) return null;
+
+    final tailleMax = mots.length < 4 ? mots.length : 4;
+    for (int taille = tailleMax; taille >= 1; taille--) {
+      final sousMots = depuisLaFin
+          ? mots.sublist(mots.length - taille)
+          : mots.sublist(0, taille);
+      var candidat = sousMots.join(' ');
+      // Retire un éventuel "de"/"d'" en tête, qui n'appartient pas au nombre
+      // lui-même (ex: "de trente" -> "trente").
+      candidat = candidat.replaceFirst(RegExp(r"^(de|d')\s+"), '').trim();
+      final n = _extraireNombreDepuisMots(candidat);
+      if (n != null) return n;
+    }
+    return null;
+  }
+
   // ---------------------------------------------------------------------
   // NOUVEAU : calculs simples ("combien font 12 fois 8")
   // ---------------------------------------------------------------------
@@ -746,8 +774,8 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
 
       final partieDroite = texteMin.substring(indexOp + motOperateur.length + 2).trim();
 
-      final nombre1 = _extraireNombreDepuisMots(partieGauche);
-      final nombre2 = _extraireNombreDepuisMots(partieDroite);
+      final nombre1 = _extraireNombreDansSegment(partieGauche, depuisLaFin: true);
+      final nombre2 = _extraireNombreDansSegment(partieDroite, depuisLaFin: false);
       if (nombre1 == null || nombre2 == null) continue;
 
       double resultat;
@@ -790,25 +818,21 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
   }
 
   String _demarrerMinuteur(String texte) {
-    final t = texte.toLowerCase().replaceAll('-', ' ');
+    final t = texte.toLowerCase().replaceAll('-', ' ').replaceAll(RegExp(r'\s+'), ' ').trim();
+    final mots = t.split(' ');
+
+    int? valeurAvantMot(bool Function(String) estMotUnite) {
+      final idx = mots.indexWhere(estMotUnite);
+      if (idx <= 0) return null;
+      final segmentAvant = mots.sublist(0, idx).join(' ');
+      return _extraireNombreDansSegment(segmentAvant, depuisLaFin: true);
+    }
 
     int totalSecondes = 0;
-
-    final matchMin = RegExp(r'([a-zà-ÿ\s\d]+?)\s*minutes?\b').firstMatch(t);
-    if (matchMin != null) {
-      var segment = matchMin.group(1)!.trim();
-      segment = segment.replaceFirst(RegExp(r"^(de|d'|un|une)\s+"), '').trim();
-      final n = _extraireNombreDepuisMots(segment);
-      if (n != null) totalSecondes += n * 60;
-    }
-
-    final matchSec = RegExp(r'([a-zà-ÿ\s\d]+?)\s*secondes?\b').firstMatch(t);
-    if (matchSec != null) {
-      var segment = matchSec.group(1)!.trim();
-      segment = segment.replaceFirst(RegExp(r"^(de|d'|un|une)\s+"), '').trim();
-      final n = _extraireNombreDepuisMots(segment);
-      if (n != null) totalSecondes += n;
-    }
+    final minutesVal = valeurAvantMot((m) => m == 'minute' || m == 'minutes');
+    if (minutesVal != null) totalSecondes += minutesVal * 60;
+    final secondesVal = valeurAvantMot((m) => m == 'seconde' || m == 'secondes');
+    if (secondesVal != null) totalSecondes += secondesVal;
 
     if (totalSecondes <= 0) {
       return "Je n'ai pas compris la durée du minuteur. Essaie par exemple : lance un minuteur de cinq minutes.";
