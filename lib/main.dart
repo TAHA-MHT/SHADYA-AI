@@ -995,7 +995,13 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
       final content = [Content.text(prompt)];
       final response = await _model.generateContent(content);
       return response.text ?? "Je n'ai pas trouvé d'information sur ce sujet.";
-    } catch (e) {
+    } catch (e, stack) {
+      // NOUVEAU : on garde une trace de l'erreur exacte (consultable via le
+      // panneau de diagnostic caché) au lieu de l'avaler silencieusement,
+      // pour comprendre pourquoi la recherche échoue spécifiquement alors
+      // que la conversation générale avec Gemini fonctionne.
+      debugPrint("Erreur recherche Gemini: $e");
+      await _ecrireCrashLog('Erreur recherche Gemini: $e\n$stack');
       return "Je n'ai pas pu effectuer la recherche pour le moment.";
     }
   }
