@@ -28,6 +28,7 @@ dependencies:
   archive: ^3.6.1
   path_provider: ^2.1.6
   http: ^1.6.0
+  record: ^5.2.1
   background_downloader: ^9.4.4
   file_picker: ^11.0.2
   
