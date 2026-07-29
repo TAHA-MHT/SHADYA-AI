@@ -17,6 +17,7 @@ import 'package:http/http.dart' as http;
 import 'package:vosk_flutter_2/vosk_flutter_2.dart' as vosk;
 import 'package:tflite_flutter/tflite_flutter.dart' as tfl;
 import 'package:path_provider/path_provider.dart';
+import 'package:record/record.dart';
 import 'package:archive/archive.dart';
 import 'package:archive/archive_io.dart';
 import 'package:file_picker/file_picker.dart';
@@ -153,6 +154,22 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
 
   // Minuteur actif (un seul à la fois pour l'instant).
   Timer? _minuteurActif;
+
+  // ---------------------------------------------------------------------
+  // NOUVEAU : mode serveur (reconnaissance vocale déportée, gros modèle).
+  // Laisser cette adresse VIDE désactive complètement la fonctionnalité et
+  // l'app se comporte exactement comme avant (Vosk local uniquement).
+  // Renseigner une adresse ici seulement une fois un vrai serveur en place
+  // (ex: "http://192.168.1.50:5000" pour un serveur sur le réseau local, ou
+  // une adresse publique une fois hébergé dans le cloud).
+  // Le serveur doit exposer :
+  //   GET  $_urlServeurSTT/status       -> 200 OK si en ligne
+  //   POST $_urlServeurSTT/reconnaitre  -> reçoit un fichier "audio" (wav),
+  //                                        répond {"text": "texte reconnu"}
+  // ---------------------------------------------------------------------
+  final String _urlServeurSTT = '';
+  AudioRecorder? _recorder;
+  bool _enregistrementServeurEnCours = false;
 
   // Dictionnaire nombres-en-lettres -> valeur numérique, construit une seule
   // fois au démarrage. Nécessaire car Vosk transcrit les nombres dits à
@@ -305,6 +322,7 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
   @override
   void dispose() {
     _minuteurActif?.cancel();
+    _recorder?.dispose();
     super.dispose();
   }
 
@@ -689,15 +707,58 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
   }
 
   /// Tente d'extraire un nombre entier à partir d'un morceau de texte : soit
-  /// des chiffres directs ("23"), soit des nombres en toutes lettres
-  /// ("vingt-trois"), avec un support basique de "cent"/"cents".
+  /// des chiffres directs ("23"), soit des nombres en toutes lettres, avec
+  /// support complet des centaines, milliers et millions
+  /// ("deux mille cinq cent trente-quatre", "trois millions").
+  /// Fonctionne en couches : millions -> milliers -> centaines -> 0-99.
   int? _extraireNombreDepuisMots(String texteBrut) {
-    var texte = texteBrut.toLowerCase().replaceAll('-', ' ').trim();
-    texte = texte.replaceAll(RegExp(r'\s+'), ' ');
+    var texte = texteBrut.toLowerCase().replaceAll('-', ' ');
+    texte = texte.replaceAll(RegExp(r'\s+'), ' ').trim();
+    if (texte.isEmpty) return null;
+    return _parserMillions(texte);
+  }
+
+  int? _parserMillions(String texte) {
+    final direct = int.tryParse(texte.replaceAll(' ', ''));
+    if (direct != null) return direct;
     if (texte.isEmpty) return null;
 
-    final direct = int.tryParse(texte);
+    final mots = texte.split(' ');
+    final idx = mots.indexWhere((m) => m == 'million' || m == 'millions');
+    if (idx != -1) {
+      final avant = mots.sublist(0, idx).join(' ').trim();
+      final apres = mots.sublist(idx + 1).join(' ').trim();
+      final multiplicateur = avant.isEmpty ? 1 : (_parserMilliers(avant) ?? 1);
+      final reste = apres.isEmpty ? 0 : (_parserMilliers(apres) ?? 0);
+      return multiplicateur * 1000000 + reste;
+    }
+
+    return _parserMilliers(texte);
+  }
+
+  int? _parserMilliers(String texte) {
+    final direct = int.tryParse(texte.replaceAll(' ', ''));
     if (direct != null) return direct;
+    if (texte.isEmpty) return null;
+
+    final mots = texte.split(' ');
+    final idx = mots.indexWhere((m) => m == 'mille');
+    if (idx != -1) {
+      final avant = mots.sublist(0, idx).join(' ').trim();
+      final apres = mots.sublist(idx + 1).join(' ').trim();
+      // "mille" seul (sans nombre devant) vaut 1000, pas besoin de "un mille".
+      final multiplicateur = avant.isEmpty ? 1 : (_parserCentaines(avant) ?? 1);
+      final reste = apres.isEmpty ? 0 : (_parserCentaines(apres) ?? 0);
+      return multiplicateur * 1000 + reste;
+    }
+
+    return _parserCentaines(texte);
+  }
+
+  int? _parserCentaines(String texte) {
+    final direct = int.tryParse(texte.replaceAll(' ', ''));
+    if (direct != null) return direct;
+    if (texte.isEmpty) return null;
 
     final centMatch = RegExp(r'^(.*?)\s*cents?\s*(.*)$').firstMatch(texte);
     if (centMatch != null) {
@@ -1220,7 +1281,119 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
     }
   }
 
+  // ---------------------------------------------------------------------
+  // NOUVEAU : mode serveur (reconnaissance vocale déportée)
+  // ---------------------------------------------------------------------
+
+  /// Vérifie que le serveur est configuré ET joignable (requête légère avec
+  /// timeout court, pour ne pas bloquer l'app si le serveur est éteint).
+  Future<bool> _serveurJoignable() async {
+    if (_urlServeurSTT.trim().isEmpty) return false;
+    try {
+      final response = await http
+          .get(Uri.parse('$_urlServeurSTT/status'))
+          .timeout(const Duration(seconds: 3));
+      return response.statusCode == 200;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<void> _demarrerEnregistrementServeur() async {
+    _recorder ??= AudioRecorder();
+
+    final permissionOk = await _recorder!.hasPermission();
+    if (!permissionOk) {
+      setState(() {
+        _recognizedText = "Permission micro refusée pour l'enregistrement.";
+      });
+      return;
+    }
+
+    final tempDir = await getTemporaryDirectory();
+    final chemin = '${tempDir.path}/shadya_question.wav';
+
+    await _recorder!.start(
+      const RecordConfig(
+        encoder: AudioEncoder.wav,
+        sampleRate: 16000,
+        numChannels: 1,
+      ),
+      path: chemin,
+    );
+
+    setState(() {
+      _enregistrementServeurEnCours = true;
+      _isListening = true;
+      _recognizedText = '';
+    });
+  }
+
+  Future<void> _arreterEtEnvoyerAuServeur() async {
+    if (_recorder == null) return;
+
+    final chemin = await _recorder!.stop();
+    setState(() {
+      _enregistrementServeurEnCours = false;
+      _isListening = false;
+      _recognizedText = "Envoi au serveur...";
+    });
+
+    if (chemin == null) return;
+
+    try {
+      final uri = Uri.parse('$_urlServeurSTT/reconnaitre');
+      final requete = http.MultipartRequest('POST', uri);
+      requete.files.add(await http.MultipartFile.fromPath('audio', chemin));
+
+      final reponseFlux = await requete.send().timeout(const Duration(seconds: 15));
+      final reponse = await http.Response.fromStream(reponseFlux);
+
+      if (reponse.statusCode == 200) {
+        final data = jsonDecode(reponse.body) as Map<String, dynamic>;
+        final texte = (data['text'] as String?) ?? '';
+        if (texte.isNotEmpty) {
+          _analyserEtRepondre(texte);
+          return;
+        }
+      }
+
+      // Le serveur a répondu mais sans texte exploitable : on informe et on
+      // s'arrête là pour cette tentative (l'utilisateur peut réessayer).
+      setState(() {
+        _recognizedText =
+            "Le serveur n'a pas pu reconnaître la phrase. Réessaie.";
+      });
+    } catch (e) {
+      setState(() {
+        _recognizedText =
+            "Impossible de contacter le serveur. Vérifie qu'il est bien allumé et sur le même réseau.";
+      });
+    }
+  }
+
   void _toggleListening() async {
+    // NOUVEAU : mode serveur en priorité absolue s'il est configuré et
+    // joignable (meilleure précision, gros vocabulaire). Si l'adresse est
+    // vide (réglage par défaut) ou le serveur injoignable, on retombe sans
+    // bruit sur Vosk local juste en dessous : le comportement actuel de
+    // l'app n'est donc pas affecté tant qu'aucun serveur n'est configuré.
+    if (_urlServeurSTT.trim().isNotEmpty) {
+      if (_enregistrementServeurEnCours) {
+        await _arreterEtEnvoyerAuServeur();
+        return;
+      }
+      final joignable = await _serveurJoignable();
+      if (joignable) {
+        await _demarrerEnregistrementServeur();
+        return;
+      }
+      setState(() {
+        _recognizedText =
+            "Serveur injoignable, reconnaissance locale utilisée à la place.";
+      });
+    }
+
     // Priorité au moteur offline (Vosk) s'il est chargé et prêt : ça permet
     // à la reconnaissance vocale de fonctionner même sans connexion internet.
     if (_sherpaReady && _voskSpeechService != null) {
