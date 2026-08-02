@@ -24,6 +24,7 @@ dependencies:
   flutter_contacts: ^1.1.9+2
   sherpa_onnx: ^1.13.2
   tflite_flutter: ^0.11.0
+  crypto: ^3.0.3
   vosk_flutter_2: ^1.0.5
   archive: ^3.6.1
   path_provider: ^2.1.6
