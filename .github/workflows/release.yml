@@ -61,8 +61,14 @@ jobs:
           find ~/.pub-cache -path "*vosk_flutter_2*" -name "*.dart" || echo "AUCUN fichier vosk_flutter_2 trouve dans le cache !"
 
       - name: Build APK
+        env:
+          TUYA_CLIENT_ID: ${{ secrets.TUYA_CLIENT_ID }}
+          TUYA_CLIENT_SECRET: ${{ secrets.TUYA_CLIENT_SECRET }}
         run: |
-          flutter build apk --release --verbose > build_log.txt 2>&1 || true
+          flutter build apk --release --verbose \
+            --dart-define=TUYA_CLIENT_ID="$TUYA_CLIENT_ID" \
+            --dart-define=TUYA_CLIENT_SECRET="$TUYA_CLIENT_SECRET" \
+            > build_log.txt 2>&1 || true
           echo "===================================================="
           echo "===== ERREURS DETECTEES AUTOMATIQUEMENT ====="
           echo "===================================================="
