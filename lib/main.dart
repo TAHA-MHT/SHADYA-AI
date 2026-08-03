@@ -1129,4 +1129,512 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
     Contact? contactTrouve;
     for (final contact in _contacts) {
       if (contact.displayName.toLowerCase().contains(nomRecherche)) {
-        con
+        contactTrouve = contact;
+        break;
+      }
+    }
+
+    if (contactTrouve == null || contactTrouve.phones.isEmpty) {
+      final message = "Je n'ai pas trouvé de contact nommé $nomRecherche.";
+      setState(() {
+        _recognizedText = message;
+      });
+      await _speak(message);
+      return true;
+    }
+
+    final numero = contactTrouve.phones.first.number;
+    final message = "J'ouvre l'appel vers ${contactTrouve.displayName}.";
+    setState(() {
+      _recognizedText = message;
+    });
+    await _speak(message);
+
+    final uri = Uri(scheme: 'tel', path: numero);
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri);
+    }
+    return true;
+  }
+
+  Future<void> _initAssistant() async {
+    final micStatus = await Permission.microphone.request();
+    if (micStatus.isGranted) {
+      _speechEnabled = await _speech.initialize(
+        onError: (error) => debugPrint('Erreur reconnaissance: $error'),
+        onStatus: (status) {
+          if (status == 'done' || status == 'notListening') {
+            setState(() => _isListening = false);
+          }
+        },
+      );
+      setState(() {});
+      Future.delayed(const Duration(milliseconds: 500), () async {
+        if (mounted) {
+          await _speak(AppLocalizations.of(context)!.greeting);
+        }
+      });
+    } else {
+      setState(() {});
+    }
+  }
+
+  Future<void> _speak(String text) async {
+    await _tts.setLanguage('fr-FR');
+    await _tts.setVolume(1.0);
+    await _tts.setSpeechRate(0.5);
+    await _tts.speak(text);
+  }
+
+  void _analyserEtRepondre(String texteEntendu) async {
+    if (texteEntendu.trim().isEmpty) return;
+
+    setState(() {
+      _recognizedText = "Shadya réfléchit...";
+    });
+
+    final commandeContactTraitee = await _essayerCommandeContact(texteEntendu);
+    if (commandeContactTraitee) return;
+
+    // NOUVEAU : commande domotique reelle via Tuya (si l'appareil a un
+    // deviceId configure dans device_registry.dart). Tant qu'aucun
+    // deviceId n'est renseigne, cette fonction renvoie null et le
+    // comportement existant (reponse locale ci-dessous) prend le relais
+    // sans rien casser.
+    final reponseTuya = await _essayerCommandeTuya(texteEntendu);
+    if (reponseTuya != null) {
+      setState(() {
+        _recognizedText = "Shadya : $reponseTuya";
+      });
+      await _speak(reponseTuya);
+      return;
+    }
+
+    final reponseDomotique = _chercherCommandeLocale(texteEntendu);
+    if (reponseDomotique != null) {
+      setState(() {
+        _recognizedText = "Shadya : $reponseDomotique";
+      });
+      await _speak(reponseDomotique);
+      return;
+    }
+
+    final reponseFixe = _chercherReponseFixe(texteEntendu);
+    if (reponseFixe != null) {
+      setState(() {
+        _recognizedText = "Shadya : $reponseFixe";
+      });
+      await _speak(reponseFixe);
+      return;
+    }
+
+    final reponseSysteme = _chercherCommandeSysteme(texteEntendu);
+    if (reponseSysteme != null) {
+      setState(() {
+        _recognizedText = "Shadya : $reponseSysteme";
+      });
+      await _speak(reponseSysteme);
+      return;
+    }
+
+    // NOUVEAU : calcul simple (100% local, aucune connexion requise)
+    final resultatCalcul = _chercherCalcul(texteEntendu);
+    if (resultatCalcul != null) {
+      setState(() {
+        _recognizedText = "Shadya : $resultatCalcul";
+      });
+      await _speak(resultatCalcul);
+      return;
+    }
+
+    // NOUVEAU : minuteur vocal (100% local, aucune connexion requise)
+    if (_estCommandeMinuteur(texteEntendu)) {
+      final resultatMinuteur = _demarrerMinuteur(texteEntendu);
+      setState(() {
+        _recognizedText = "Shadya : $resultatMinuteur";
+      });
+      await _speak(resultatMinuteur);
+      return;
+    }
+
+    // NOUVEAU : météo (nécessite une connexion internet)
+    final texteMinuscule = texteEntendu.toLowerCase();
+    final estMeteo = texteMinuscule.contains('météo') ||
+        texteMinuscule.contains('meteo') ||
+        texteMinuscule.contains('quel temps');
+    if (estMeteo) {
+      final connecteMeteo = await _estConnecte();
+      if (!connecteMeteo) {
+        const messageMeteo =
+            "La météo nécessite une connexion internet, et je n'en ai pas actuellement.";
+        setState(() {
+          _recognizedText = messageMeteo;
+        });
+        await _speak(messageMeteo);
+        return;
+      }
+      final resultatMeteo = await _obtenirMeteo(texteEntendu);
+      setState(() {
+        _recognizedText = "Shadya : $resultatMeteo";
+      });
+      await _speak(resultatMeteo);
+      return;
+    }
+
+    // NOUVEAU : recherche d'information via Gemini (nécessite une connexion)
+    if (_estCommandeRecherche(texteEntendu)) {
+      final connecteRecherche = await _estConnecte();
+      if (!connecteRecherche) {
+        const messageRecherche =
+            "La recherche nécessite une connexion internet, et je n'en ai pas actuellement.";
+        setState(() {
+          _recognizedText = messageRecherche;
+        });
+        await _speak(messageRecherche);
+        return;
+      }
+      setState(() {
+        _recognizedText = "Shadya recherche...";
+      });
+      final resultatRecherche = await _rechercheGemini(texteEntendu);
+      setState(() {
+        _recognizedText = "Shadya : $resultatRecherche";
+      });
+      await _speak(resultatRecherche);
+      return;
+    }
+
+    final connecte = await _estConnecte();
+
+    if (!connecte) {
+      const messageHorsLigne =
+          "Je n'ai pas de connexion internet, je ne peux pas répondre à cette question maintenant.";
+      setState(() {
+        _recognizedText = messageHorsLigne;
+      });
+      await _speak(messageHorsLigne);
+      return;
+    }
+
+    try {
+      final promptInstructions =
+          "Tu es Shadya, une assistante vocale chaleureuse et serviable. "
+          "Réponds de manière amicale, naturelle et très courte (maximum 2 phrases). "
+          "Voici la question de l'utilisateur : $texteEntendu";
+
+      final content = [Content.text(promptInstructions)];
+      final response = await _model.generateContent(content);
+      final reponseIA = response.text ?? "Je n'ai pas pu formuler de réponse.";
+
+      setState(() {
+        _recognizedText = "Shadya : $reponseIA";
+      });
+
+      await _speak(reponseIA);
+    } catch (e) {
+      debugPrint("Erreur Gemini API: $e");
+
+      final erreurTexte = e.toString().toLowerCase();
+      String messageErreur;
+
+      if (erreurTexte.contains('quota') || erreurTexte.contains('429')) {
+        messageErreur =
+            "Je suis très sollicitée en ce moment. Réessaie dans une minute.";
+      } else if (erreurTexte.contains('500') ||
+          erreurTexte.contains('internal') ||
+          erreurTexte.contains('high demand')) {
+        messageErreur =
+            "Le service est momentanément occupé. Réessaie dans quelques instants.";
+      } else {
+        messageErreur =
+            "Je n'ai pas pu contacter le service en ligne pour cette question.";
+      }
+
+      setState(() {
+        _recognizedText = messageErreur;
+      });
+      await _speak(messageErreur);
+    }
+  }
+
+  // ---------------------------------------------------------------------
+  // NOUVEAU : mode serveur (reconnaissance vocale déportée)
+  // ---------------------------------------------------------------------
+
+  /// Vérifie que le serveur est configuré ET joignable (requête légère avec
+  /// timeout court, pour ne pas bloquer l'app si le serveur est éteint).
+  Future<bool> _serveurJoignable() async {
+    if (_urlServeurSTT.trim().isEmpty) return false;
+    try {
+      final response = await http
+          .get(Uri.parse('$_urlServeurSTT/status'))
+          .timeout(const Duration(seconds: 3));
+      return response.statusCode == 200;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<void> _demarrerEnregistrementServeur() async {
+    _recorder ??= AudioRecorder();
+
+    final permissionOk = await _recorder!.hasPermission();
+    if (!permissionOk) {
+      setState(() {
+        _recognizedText = "Permission micro refusée pour l'enregistrement.";
+      });
+      return;
+    }
+
+    final tempDir = await getTemporaryDirectory();
+    final chemin = '${tempDir.path}/shadya_question.wav';
+
+    await _recorder!.start(
+      const RecordConfig(
+        encoder: AudioEncoder.wav,
+        sampleRate: 16000,
+        numChannels: 1,
+      ),
+      path: chemin,
+    );
+
+    setState(() {
+      _enregistrementServeurEnCours = true;
+      _isListening = true;
+      _recognizedText = '';
+    });
+  }
+
+  Future<void> _arreterEtEnvoyerAuServeur() async {
+    if (_recorder == null) return;
+
+    final chemin = await _recorder!.stop();
+    setState(() {
+      _enregistrementServeurEnCours = false;
+      _isListening = false;
+      _recognizedText = "Envoi au serveur...";
+    });
+
+    if (chemin == null) return;
+
+    try {
+      final uri = Uri.parse('$_urlServeurSTT/reconnaitre');
+      final requete = http.MultipartRequest('POST', uri);
+      requete.files.add(await http.MultipartFile.fromPath('audio', chemin));
+
+      final reponseFlux = await requete.send().timeout(const Duration(seconds: 15));
+      final reponse = await http.Response.fromStream(reponseFlux);
+
+      if (reponse.statusCode == 200) {
+        final data = jsonDecode(reponse.body) as Map<String, dynamic>;
+        final texte = (data['text'] as String?) ?? '';
+        if (texte.isNotEmpty) {
+          _analyserEtRepondre(texte);
+          return;
+        }
+      }
+
+      // Le serveur a répondu mais sans texte exploitable : on informe et on
+      // s'arrête là pour cette tentative (l'utilisateur peut réessayer).
+      setState(() {
+        _recognizedText =
+            "Le serveur n'a pas pu reconnaître la phrase. Réessaie.";
+      });
+    } catch (e) {
+      setState(() {
+        _recognizedText =
+            "Impossible de contacter le serveur. Vérifie qu'il est bien allumé et sur le même réseau.";
+      });
+    }
+  }
+
+  void _toggleListening() async {
+    // NOUVEAU : mode serveur en priorité absolue s'il est configuré et
+    // joignable (meilleure précision, gros vocabulaire). Si l'adresse est
+    // vide (réglage par défaut) ou le serveur injoignable, on retombe sans
+    // bruit sur Vosk local juste en dessous : le comportement actuel de
+    // l'app n'est donc pas affecté tant qu'aucun serveur n'est configuré.
+    if (_urlServeurSTT.trim().isNotEmpty) {
+      if (_enregistrementServeurEnCours) {
+        await _arreterEtEnvoyerAuServeur();
+        return;
+      }
+      final joignable = await _serveurJoignable();
+      if (joignable) {
+        await _demarrerEnregistrementServeur();
+        return;
+      }
+      setState(() {
+        _recognizedText =
+            "Serveur injoignable, reconnaissance locale utilisée à la place.";
+      });
+    }
+
+    // Priorité au moteur offline (Vosk) s'il est chargé et prêt : ça permet
+    // à la reconnaissance vocale de fonctionner même sans connexion internet.
+    if (_sherpaReady && _voskSpeechService != null) {
+      if (_isListening) {
+        await _voskSpeechService!.stop();
+        setState(() => _isListening = false);
+      } else {
+        setState(() {
+          _isListening = true;
+          _recognizedText = '';
+        });
+        await _voskSpeechService!.start();
+      }
+      return;
+    }
+
+    // Sinon, on retombe sur la reconnaissance vocale en ligne (Google) comme
+    // avant.
+    if (!_speechEnabled) {
+      await _speak(AppLocalizations.of(context)!.microphonePermissionDenied);
+      return;
+    }
+    if (_isListening) {
+      await _speech.stop();
+      setState(() => _isListening = false);
+    } else {
+      setState(() {
+        _isListening = true;
+        _recognizedText = '';
+      });
+      await _speech.listen(
+        onResult: (result) {
+          setState(() {
+            _recognizedText = result.recognizedWords;
+          });
+
+          if (result.finalResult) {
+            setState(() => _isListening = false);
+            _analyserEtRepondre(result.recognizedWords);
+          }
+        },
+        localeId: 'fr_FR',
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final loc = AppLocalizations.of(context)!;
+    return Scaffold(
+      body: SafeArea(
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const SizedBox(height: 24),
+              GestureDetector(
+                onLongPress: _afficherDiagnosticSherpa,
+                child: Text(
+                  loc.appTitle,
+                  style: Theme.of(context).textTheme.headlineMedium,
+                ),
+              ),
+              const SizedBox(height: 24),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 32),
+                child: Text(
+                  _isListening
+                      ? loc.listeningPrompt
+                      : (_recognizedText.isEmpty
+                          ? loc.tapToSpeak
+                          : _recognizedText),
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
+              ),
+              if (_sherpaStatus.isNotEmpty && !_sherpaReady) ...[
+                const SizedBox(height: 16),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                  child: Text(
+                    _sherpaStatus,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(fontSize: 13, color: Colors.grey),
+                  ),
+                ),
+              ],
+              if (_sherpaNecessiteFichier && !_sherpaEnCours) ...[
+                const SizedBox(height: 16),
+                ElevatedButton(
+                  onPressed: _choisirEtExtraireModele,
+                  child: const Text(
+                      "Sélectionner le fichier du modèle vocal"),
+                ),
+              ],
+              if (_sherpaModelPathDetecte != null &&
+                  !_sherpaEnCours &&
+                  !_sherpaReady) ...[
+                const SizedBox(height: 16),
+                ElevatedButton(
+                  onPressed: () =>
+                      _chargerModeleSherpa(_sherpaModelPathDetecte!),
+                  child: const Text("Charger le modèle vocal"),
+                ),
+              ],
+              const SizedBox(height: 24),
+              OutlinedButton(
+                onPressed: _testerTflite,
+                child: const Text(
+                    "TEST DIAGNOSTIC : charger un modèle TFLite"),
+              ),
+              if (_tfliteTestResult != null) ...[
+                const SizedBox(height: 12),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                  child: Text(
+                    _tfliteTestResult!,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(fontSize: 12),
+                  ),
+                ),
+              ],
+              if (_showDebugPanel) ...[
+                const SizedBox(height: 24),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: SelectableText(
+                    _debugSecretInfo ?? '',
+                    style: const TextStyle(fontSize: 11),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextButton(
+                  onPressed: _effacerCrashLog,
+                  child: const Text(
+                    "Effacer le fichier crash_log.txt",
+                    style: TextStyle(fontSize: 11),
+                  ),
+                ),
+              ],
+              const SizedBox(height: 24),
+              GestureDetector(
+                onTap: _toggleListening,
+                child: Container(
+                  width: 140,
+                  height: 140,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: _isListening
+                        ? Theme.of(context).colorScheme.error
+                        : Theme.of(context).colorScheme.primary,
+                  ),
+                  child: const Icon(
+                    Icons.mic,
+                    color: Colors.white,
+                    size: 64,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 24),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
