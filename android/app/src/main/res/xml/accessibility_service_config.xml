@@ -4,6 +4,4 @@
     android:accessibilityFeedbackType="feedbackGeneric"
     android:accessibilityFlags="flagDefault|flagIncludeNotImportantViews|flagReportViewIds"
     android:canRetrieveWindowContent="true"
-    android:canPerformGestures="true"
-    android:description="@string/shadya_agent_description" />
-
+    android:canPerformGestures="true" />
