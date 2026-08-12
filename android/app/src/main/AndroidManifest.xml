@@ -18,6 +18,7 @@
         android:largeHeap="true"
         android:networkSecurityConfig="@xml/network_security_config">
 
+        <!-- Configuration Flutter Embedding v2 -->
         <activity
             android:name="com.shadyaai.app.MainActivity"
             android:exported="true"
@@ -27,9 +28,15 @@
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|layoutDirection|fontScale"
             android:hardwareAccelerated="true"
             android:windowSoftInputMode="adjustResize">
+            
+            <!-- Déclarations v2 obligatoires -->
             <meta-data
                 android:name="io.flutter.embedding.android.NormalTheme"
                 android:resource="@style/NormalTheme" />
+            <meta-data
+                android:name="flutterEmbedding"
+                android:value="2" />
+
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
@@ -40,13 +47,9 @@
             android:name="firebase_app_check_debug_secret"
             android:value="a1b2c3d4-e5f6-4789-a012-3456789abcde" />
 
-        <meta-data
-            android:name="FlutterEmbedding"
-            android:value="2" />
-
         <!-- Service d'accessibilité Shadya -->
         <service
-            android:name="com.shadya.assistant.ShadyaAgentService"
+            android:name="com.shadyaai.app.ShadyaAgentService"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
             android:exported="true">
             <intent-filter>
@@ -59,7 +62,7 @@
 
         <!-- Récepteur de SMS pour le code OTP -->
         <receiver
-            android:name="com.shadya.assistant.SmsCodeReceiver"
+            android:name="com.shadyaai.app.SmsCodeReceiver"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.provider.Telephony.SMS_RECEIVED" />
