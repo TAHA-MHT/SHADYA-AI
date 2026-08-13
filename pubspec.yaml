@@ -32,8 +32,7 @@ dependencies:
   record: ^6.1.1
   background_downloader: ^9.4.4
   file_picker: ^11.0.2
-    external_app_launcher: ^3.1.0
-  
+    
 dev_dependencies:
   flutter_test:
     sdk: flutter
