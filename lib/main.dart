@@ -576,6 +576,42 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
         }
       });
 
+        Future<bool> _essayerOuvrirApplication(String texte) async {
+    final texteMinuscule = texte.toLowerCase().trim();
+
+    final estCommandeOuverture = RegExp(r'\b(ouvre|lancer|lance|démarre|demarre)\b').hasMatch(texteMinuscule);
+    if (!estCommandeOuverture) return false;
+
+    final appsPackages = <String, String>{
+      'whatsapp': 'com.whatsapp',
+      'facebook': 'com.facebook.katana',
+      'youtube': 'com.google.android.youtube',
+      'instagram': 'com.instagram.android',
+      'chrome': 'com.android.chrome',
+    };
+
+    for (final entry in appsPackages.entries) {
+      if (texteMinuscule.contains(entry.key)) {
+        final nomApp = entry.key;
+        final packageApp = entry.value;
+
+        await _speak("J'ouvre $nomApp");
+
+        try {
+          await LaunchApp.openApp(
+            androidPackageName: packageApp,
+            openStore: true,
+          );
+          return true;
+        } catch (e) {
+          debugPrint("Erreur ouverture app: $e");
+        }
+      }
+    }
+
+    return false;
+  }
+
       _voskSpeechService!.onResult().listen((result) {
         // "result" est une chaîne JSON du type {"text": "texte final"}
         final texte = _extraireTexteFinal(result);
