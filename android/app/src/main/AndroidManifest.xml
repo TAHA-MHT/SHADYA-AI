@@ -70,8 +70,21 @@
         </receiver>
 
     </application>
-
     <queries>
+        <!-- Package des applications à lancer -->
+        <package android:name="com.whatsapp" />
+        <package android:name="com.facebook.katana" />
+        <package android:name="com.google.android.youtube" />
+        <package android:name="com.instagram.android" />
+        <package android:name="com.android.chrome" />
+
+        <!-- Intention pour l'ouverture des liens et navigateurs -->
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="https" />
+        </intent>
+
+        <!-- Ton ancienne déclaration PROCESS_TEXT pour garder le texte -->
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT" />
             <data android:mimeType="text/plain" />
