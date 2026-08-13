@@ -542,7 +542,7 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
   @override
   void dispose() {
     _minuteurActif?.cancel();
-    _recorder?.dispose();
+
     super.dispose();
   }
 
