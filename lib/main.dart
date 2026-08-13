@@ -57,10 +57,11 @@ Future<void> main() async {
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
+  
+  // Correction ici : activation sans conflit de types sur Android
   await FirebaseAppCheck.instance.activate(
-  providerAndroid: AndroidProvider.debug, // Remplace 'androidProvider' par 'providerAndroid' ou vice-versa
-);
-
+    androidProvider: AndroidProvider.debug,
+  );
 
   runApp(const ShadyaApp());
 }
@@ -587,7 +588,7 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
   @override
   void dispose() {
     _minuteurActif?.cancel();
-    _datasetRecorder.dispose(); // Fermeture propre du recorder pour le dataset
+    _datasetRecorder.dispose();
 
     super.dispose();
   }
@@ -1423,9 +1424,6 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
               ),
               const SizedBox(height: 16),
               
-              // ------------------------------------------------------------
-              // BOUTON DE CAPTURE VOCALE POUR ALIMENTER LE DATASET
-              // ------------------------------------------------------------
               ElevatedButton.icon(
                 onPressed: () async {
                   if (_isRecordingDataset) {
