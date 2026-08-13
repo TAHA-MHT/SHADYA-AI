@@ -1,4 +1,3 @@
-import 'package:external_app_launcher/external_app_launcher.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -554,34 +553,37 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
     }
   }
 
-  /// Ouvre une application externe selon la commande vocale
+  /// Ouvre une application externe avec url_launcher
   Future<bool> _essayerOuvrirApplication(String texte) async {
     final texteMinuscule = texte.toLowerCase().trim();
 
     final estCommandeOuverture = RegExp(r'\b(ouvre|lancer|lance|démarre|demarre)\b').hasMatch(texteMinuscule);
     if (!estCommandeOuverture) return false;
 
-    final appsPackages = <String, String>{
-      'whatsapp': 'com.whatsapp',
-      'facebook': 'com.facebook.katana',
-      'youtube': 'com.google.android.youtube',
-      'instagram': 'com.instagram.android',
-      'chrome': 'com.android.chrome',
+    final appsSchemes = <String, String>{
+      'whatsapp': 'whatsapp://',
+      'facebook': 'fb://',
+      'youtube': 'https://www.youtube.com',
+      'instagram': 'instagram://',
+      'chrome': 'https://www.google.com',
     };
 
-    for (final entry in appsPackages.entries) {
+    for (final entry in appsSchemes.entries) {
       if (texteMinuscule.contains(entry.key)) {
         final nomApp = entry.key;
-        final packageApp = entry.value;
+        final uri = Uri.parse(entry.value);
 
         await _speak("J'ouvre $nomApp");
 
         try {
-          await LaunchApp.openApp(
-            androidPackageName: packageApp,
-            openStore: true,
-          );
-          return true;
+          if (await canLaunchUrl(uri)) {
+            await launchUrl(uri, mode: LaunchMode.externalApplication);
+            return true;
+          } else {
+            final fallbackUri = Uri.parse('https://www.$nomApp.com');
+            await launchUrl(fallbackUri, mode: LaunchMode.externalApplication);
+            return true;
+          }
         } catch (e) {
           debugPrint("Erreur ouverture app: $e");
         }
