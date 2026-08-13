@@ -57,10 +57,6 @@ Future<void> main() async {
   };
 
   // Capture les erreurs Dart non gérées ailleurs (async, isolates racine, etc.)
-  // NOTE IMPORTANTE : si le système Android tue l'app pour manque de mémoire
-  // (OOM / low-memory killer), ce handler ne sera JAMAIS appelé, car le
-  // processus est tué brutalement avant que Dart ne puisse réagir. Dans ce
-  // cas, crash_log.txt restera vide malgré le crash.
   PlatformDispatcher.instance.onError = (error, stack) {
     _ecrireCrashLog('$error\n$stack');
     return true;
@@ -78,8 +74,7 @@ Future<void> main() async {
 
 /// Extraction en streaming : lit, décompresse et écrit sur le disque par
 /// blocs successifs, sans jamais charger le fichier .tar.bz2 entier (398 Mo)
-/// en mémoire d'un coup — contrairement à l'ancienne méthode (decodeBytes)
-/// qui pouvait faire grimper l'utilisation RAM à plus d'1 Go.
+/// en mémoire d'un coup.
 Future<void> _extraireArchiveIsolate(List<String> params) async {
   final archivePath = params[0];
   final outputDirPath = params[1];
@@ -151,37 +146,16 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
   String _sherpaStatus = "Préparation de la reconnaissance vocale...";
   String? _tfliteTestResult;
 
-  // Ville utilisée par défaut pour la météo si l'utilisateur n'en précise
-  // pas une explicitement (ex: "météo à Paris").
   final String _villeParDefaut = "N'Djamena";
 
-  // Minuteur actif (un seul à la fois pour l'instant).
   Timer? _minuteurActif;
 
-  // ---------------------------------------------------------------------
-  // NOUVEAU : mode serveur (reconnaissance vocale déportée, gros modèle).
-  // Laisser cette adresse VIDE désactive complètement la fonctionnalité et
-  // l'app se comporte exactement comme avant (Vosk local uniquement).
-  // Renseigner une adresse ici seulement une fois un vrai serveur en place
-  // (ex: "http://192.168.1.50:5000" pour un serveur sur le réseau local, ou
-  // une adresse publique une fois hébergé dans le cloud).
-  // Le serveur doit exposer :
-  //   GET  $_urlServeurSTT/status       -> 200 OK si en ligne
-  //   POST $_urlServeurSTT/reconnaitre  -> reçoit un fichier "audio" (wav),
-  //                                        répond {"text": "texte reconnu"}
-  // ---------------------------------------------------------------------
   final String _urlServeurSTT = '';
   AudioRecorder? _recorder;
   bool _enregistrementServeurEnCours = false;
 
-  // Dictionnaire nombres-en-lettres -> valeur numérique, construit une seule
-  // fois au démarrage. Nécessaire car Vosk transcrit les nombres dits à
-  // l'oral en toutes lettres ("vingt-trois"), pas en chiffres ("23").
   late final Map<String, int> _dictionnaireNombres = _construireDictionnaireNombres();
 
-  // ---------------------------------------------------------------------
-  // NOUVEAU : integration Tuya (domotique reelle via prise/appareil connecte)
-  // ---------------------------------------------------------------------
   final TuyaService _tuyaService = TuyaService();
 
   final Map<String, DeviceType> _correspondanceAppareils = {
@@ -211,8 +185,6 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
 
     final appareil = DeviceRegistry.devices[appareilTrouve];
     if (appareil == null || appareil.deviceId.isEmpty) {
-      // Appareil pas encore configure (deviceId vide) : on laisse la
-      // reponse locale existante (_commandesLocales) prendre le relais.
       return null;
     }
 
@@ -402,8 +374,6 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
     final appDir = await getApplicationSupportDirectory();
     final modelDir = Directory('${appDir.path}/$_sherpaModelDirName');
     if (await modelDir.exists()) {
-      // Un modèle Vosk contient un dossier "am" (acoustic model) ; on
-      // vérifie sa présence pour confirmer une extraction complète.
       final amDir = Directory('${modelDir.path}/am');
       final confDir = Directory('${modelDir.path}/conf');
       if (await amDir.exists() || await confDir.exists()) {
@@ -425,10 +395,6 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
     final modelPathExistant = await _cheminModeleSiPresent();
 
     if (modelPathExistant != null) {
-      // IMPORTANT : on ne charge plus automatiquement le modèle au démarrage.
-      // Le chargement natif peut crasher l'app ; en le rendant manuel, on a
-      // le temps de consulter le diagnostic (appui long sur le titre) avant
-      // de relancer un chargement qui pourrait re-crasher.
       setState(() {
         _sherpaModelPathDetecte = modelPathExistant;
         _sherpaStatus =
@@ -475,8 +441,6 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
       try {
         await compute(_extraireArchiveIsolate, parametres);
       } catch (e, stack) {
-        // Erreur catchable pendant l'extraction (pas un OOM tué par le système,
-        // celui-là ne remonterait pas ici).
         await _ecrireCrashLog('Erreur extraction: $e\n$stack');
         rethrow;
       }
@@ -501,10 +465,6 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
     }
   }
 
-  /// TEST DIAGNOSTIC ISOLÉ : essaie de charger un petit modèle TensorFlow
-  /// Lite (bibliothèque native complètement différente de sherpa-onnx et
-  /// Vosk) pour vérifier si TOUTE bibliothèque native lourde crashe sur cet
-  /// appareil, ou si c'est spécifique aux moteurs de reconnaissance vocale.
   Future<void> _testerTflite() async {
     setState(() {
       _tfliteTestResult = "Sélection du fichier .tflite...";
@@ -538,15 +498,11 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
     }
   }
 
-  /// Extrait le champ "partial" d'une chaîne JSON renvoyée par Vosk en cours
-  /// de reconnaissance (résultat provisoire, pas encore final).
   String _extraireTextePartiel(String jsonBrut) {
     final match = RegExp(r'"partial"\s*:\s*"([^"]*)"').firstMatch(jsonBrut);
     return match?.group(1) ?? '';
   }
 
-  /// Extrait le champ "text" d'une chaîne JSON renvoyée par Vosk une fois la
-  /// reconnaissance terminée (résultat final).
   String _extraireTexteFinal(String jsonBrut) {
     final match = RegExp(r'"text"\s*:\s*"([^"]*)"').firstMatch(jsonBrut);
     return match?.group(1) ?? '';
@@ -567,7 +523,6 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
       _voskSpeechService = await _vosk.initSpeechService(_voskRecognizer!);
 
       _voskSpeechService!.onPartial().listen((partial) {
-        // "partial" est une chaîne JSON du type {"partial": "texte..."}
         final texte = _extraireTextePartiel(partial);
         if (texte.isNotEmpty) {
           setState(() {
@@ -576,7 +531,31 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
         }
       });
 
-        Future<bool> _essayerOuvrirApplication(String texte) async {
+      _voskSpeechService!.onResult().listen((result) {
+        final texte = _extraireTexteFinal(result);
+        if (texte.isNotEmpty) {
+          _voskSpeechService!.stop();
+          setState(() => _isListening = false);
+          _analyserEtRepondre(texte);
+        }
+      });
+
+      setState(() {
+        _sherpaReady = true;
+        _sherpaEnCours = false;
+        _sherpaNecessiteFichier = false;
+        _sherpaStatus = '';
+      });
+    } catch (e) {
+      setState(() {
+        _sherpaEnCours = false;
+        _sherpaStatus = "Erreur de chargement du modèle: $e";
+      });
+    }
+  }
+
+  /// Ouvre une application externe selon la commande vocale
+  Future<bool> _essayerOuvrirApplication(String texte) async {
     final texteMinuscule = texte.toLowerCase().trim();
 
     final estCommandeOuverture = RegExp(r'\b(ouvre|lancer|lance|démarre|demarre)\b').hasMatch(texteMinuscule);
@@ -612,36 +591,6 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
     return false;
   }
 
-      _voskSpeechService!.onResult().listen((result) {
-        // "result" est une chaîne JSON du type {"text": "texte final"}
-        final texte = _extraireTexteFinal(result);
-        if (texte.isNotEmpty) {
-          // IMPORTANT : on arrête vraiment l'écoute native ici, sinon Vosk
-          // continue de capter l'audio après la reconnaissance et finit par
-          // entendre la propre voix TTS de Shadya, ce qui redéclenche des
-          // "questions" fantômes et fait boucler les réponses.
-          _voskSpeechService!.stop();
-          setState(() => _isListening = false);
-          _analyserEtRepondre(texte);
-        }
-      });
-
-      setState(() {
-        _sherpaReady = true;
-        _sherpaEnCours = false;
-        _sherpaNecessiteFichier = false;
-        _sherpaStatus = '';
-      });
-    } catch (e) {
-      setState(() {
-        _sherpaEnCours = false;
-        _sherpaStatus = "Erreur de chargement du modèle: $e";
-      });
-    }
-  }
-
-  /// Affiche un diagnostic combiné : statut sherpa + contenu du fichier
-  /// crash_log.txt (s'il existe), directement dans le panneau caché.
   Future<void> _afficherDiagnosticSherpa() async {
     setState(() {
       _showDebugPanel = true;
@@ -696,8 +645,6 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
     });
   }
 
-  /// Efface le fichier crash_log.txt (utile pour repartir propre avant un
-  /// nouveau test).
   Future<void> _effacerCrashLog() async {
     try {
       final appDir = await getApplicationSupportDirectory();
@@ -715,42 +662,11 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
     }
   }
 
-  Future<void> _fetchDebugSecret() async {
-    setState(() {
-      _showDebugPanel = true;
-      _debugSecretInfo = 'Recherche en cours...';
-    });
-    try {
-      final result = await Process.run('logcat', ['-d']);
-      final output = result.stdout.toString();
-      final lines = output.split('\n');
-      final secretLine = lines.firstWhere(
-        (l) => l.toLowerCase().contains('debug secret'),
-        orElse: () => '',
-      );
-      setState(() {
-        _debugSecretInfo = secretLine.isEmpty
-            ? 'Pas encore trouvé. Ferme et rouvre complètement l\'app, puis réessaie.'
-            : secretLine;
-      });
-    } catch (e) {
-      setState(() {
-        _debugSecretInfo = 'Erreur lecture logs: $e';
-      });
-    }
-  }
-
   Future<bool> _estConnecte() async {
     final connectivityResult = await Connectivity().checkConnectivity();
     return !connectivityResult.contains(ConnectivityResult.none);
   }
 
-  // ---------------------------------------------------------------------
-  // NOUVEAU : conversion des nombres dits en toutes lettres vers un entier.
-  // Nécessaire car Vosk transcrit la parole en mots ("vingt-trois"), pas en
-  // chiffres ("23"), donc le calculateur et le minuteur doivent comprendre
-  // les nombres écrits en français.
-  // ---------------------------------------------------------------------
   Map<String, int> _construireDictionnaireNombres() {
     final dict = <String, int>{};
     const unites = [
@@ -777,21 +693,18 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
       }
     });
 
-    // 70-79 : soixante + dix..dix-neuf (irrégulier en français standard)
     dict['soixante dix'] = 70;
     dict['soixante et onze'] = 71;
     for (int u = 2; u < 10; u++) {
       dict['soixante ${onzeADixNeuf[u]}'] = 70 + u;
     }
 
-    // 80-89 : quatre-vingt + unité (pas de "et" en français standard)
     dict['quatre vingt'] = 80;
     dict['quatre vingts'] = 80;
     for (int u = 1; u < 10; u++) {
       dict['quatre vingt ${unites[u]}'] = 80 + u;
     }
 
-    // 90-99 : quatre-vingt + dix..dix-neuf
     for (int u = 0; u < 10; u++) {
       dict['quatre vingt ${onzeADixNeuf[u]}'] = 90 + u;
     }
@@ -799,11 +712,6 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
     return dict;
   }
 
-  /// Tente d'extraire un nombre entier à partir d'un morceau de texte : soit
-  /// des chiffres directs ("23"), soit des nombres en toutes lettres, avec
-  /// support complet des centaines, milliers et millions
-  /// ("deux mille cinq cent trente-quatre", "trois millions").
-  /// Fonctionne en couches : millions -> milliers -> centaines -> 0-99.
   int? _extraireNombreDepuisMots(String texteBrut) {
     var texte = texteBrut.toLowerCase().replaceAll('-', ' ');
     texte = texte.replaceAll(RegExp(r'\s+'), ' ').trim();
@@ -839,7 +747,6 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
     if (idx != -1) {
       final avant = mots.sublist(0, idx).join(' ').trim();
       final apres = mots.sublist(idx + 1).join(' ').trim();
-      // "mille" seul (sans nombre devant) vaut 1000, pas besoin de "un mille".
       final multiplicateur = avant.isEmpty ? 1 : (_parserCentaines(avant) ?? 1);
       final reste = apres.isEmpty ? 0 : (_parserCentaines(apres) ?? 0);
       return multiplicateur * 1000 + reste;
@@ -867,11 +774,6 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
     return _dictionnaireNombres[texte];
   }
 
-  /// Cherche un nombre à l'intérieur d'un segment de texte qui peut contenir
-  /// des mots parasites (articles, mots de liaison, fin de phrase type "font
-  /// combien"). Essaie des fenêtres de 4, 3, 2 puis 1 mot, en partant soit du
-  /// début soit de la fin du segment, jusqu'à trouver une correspondance
-  /// valide dans le dictionnaire de nombres.
   int? _extraireNombreDansSegment(String segment, {required bool depuisLaFin}) {
     final mots = segment
         .trim()
@@ -886,8 +788,6 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
           ? mots.sublist(mots.length - taille)
           : mots.sublist(0, taille);
       var candidat = sousMots.join(' ');
-      // Retire un éventuel "de"/"d'" en tête, qui n'appartient pas au nombre
-      // lui-même (ex: "de trente" -> "trente").
       candidat = candidat.replaceFirst(RegExp(r"^(de|d')\s+"), '').trim();
       final n = _extraireNombreDepuisMots(candidat);
       if (n != null) return n;
@@ -895,9 +795,6 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
     return null;
   }
 
-  // ---------------------------------------------------------------------
-  // NOUVEAU : calculs simples ("combien font 12 fois 8")
-  // ---------------------------------------------------------------------
   String? _chercherCalcul(String texte) {
     final texteMin = texte.toLowerCase();
 
@@ -961,9 +858,6 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
     return null;
   }
 
-  // ---------------------------------------------------------------------
-  // NOUVEAU : minuteur vocal ("lance un minuteur de 5 minutes")
-  // ---------------------------------------------------------------------
   bool _estCommandeMinuteur(String texte) {
     final t = texte.toLowerCase();
     return t.contains('minuteur') ||
@@ -1011,9 +905,6 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
     return "D'accord, minuteur lancé pour $dureeTexte.";
   }
 
-  // ---------------------------------------------------------------------
-  // NOUVEAU : météo via l'API gratuite Open-Meteo (aucune clé requise)
-  // ---------------------------------------------------------------------
   String _descriptionMeteo(int code) {
     if (code == 0) return "ciel dégagé";
     if (code <= 3) return "partiellement nuageux";
@@ -1067,9 +958,6 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
     }
   }
 
-  // ---------------------------------------------------------------------
-  // NOUVEAU : recherche d'information via Gemini ("cherche-moi...")
-  // ---------------------------------------------------------------------
   bool _estCommandeRecherche(String texte) {
     final t = texte.toLowerCase();
     return t.contains('cherche moi') ||
@@ -1089,10 +977,6 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
       final response = await _model.generateContent(content);
       return response.text ?? "Je n'ai pas trouvé d'information sur ce sujet.";
     } catch (e, stack) {
-      // NOUVEAU : on garde une trace de l'erreur exacte (consultable via le
-      // panneau de diagnostic caché) au lieu de l'avaler silencieusement,
-      // pour comprendre pourquoi la recherche échoue spécifiquement alors
-      // que la conversation générale avec Gemini fonctionne.
       debugPrint("Erreur recherche Gemini: $e");
       await _ecrireCrashLog('Erreur recherche Gemini: $e\n$stack');
       return "Je n'ai pas pu effectuer la recherche pour le moment.";
@@ -1226,6 +1110,12 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
   void _analyserEtRepondre(String texteEntendu) async {
     if (texteEntendu.trim().isEmpty) return;
 
+    // Intercepte les ouvertures d'applications avant tout le reste
+    final appOuverte = await _essayerOuvrirApplication(texteEntendu);
+    if (appOuverte) {
+      return;
+    }
+
     setState(() {
       _recognizedText = "Shadya réfléchit...";
     });
@@ -1233,11 +1123,6 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
     final commandeContactTraitee = await _essayerCommandeContact(texteEntendu);
     if (commandeContactTraitee) return;
 
-    // NOUVEAU : commande domotique reelle via Tuya (si l'appareil a un
-    // deviceId configure dans device_registry.dart). Tant qu'aucun
-    // deviceId n'est renseigne, cette fonction renvoie null et le
-    // comportement existant (reponse locale ci-dessous) prend le relais
-    // sans rien casser.
     final reponseTuya = await _essayerCommandeTuya(texteEntendu);
     if (reponseTuya != null) {
       setState(() {
@@ -1274,7 +1159,6 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
       return;
     }
 
-    // NOUVEAU : calcul simple (100% local, aucune connexion requise)
     final resultatCalcul = _chercherCalcul(texteEntendu);
     if (resultatCalcul != null) {
       setState(() {
@@ -1284,7 +1168,6 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
       return;
     }
 
-    // NOUVEAU : minuteur vocal (100% local, aucune connexion requise)
     if (_estCommandeMinuteur(texteEntendu)) {
       final resultatMinuteur = _demarrerMinuteur(texteEntendu);
       setState(() {
@@ -1294,7 +1177,6 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
       return;
     }
 
-    // NOUVEAU : météo (nécessite une connexion internet)
     final texteMinuscule = texteEntendu.toLowerCase();
     final estMeteo = texteMinuscule.contains('météo') ||
         texteMinuscule.contains('meteo') ||
@@ -1318,7 +1200,6 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
       return;
     }
 
-    // NOUVEAU : recherche d'information via Gemini (nécessite une connexion)
     if (_estCommandeRecherche(texteEntendu)) {
       final connecteRecherche = await _estConnecte();
       if (!connecteRecherche) {
@@ -1394,12 +1275,6 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
     }
   }
 
-  // ---------------------------------------------------------------------
-  // NOUVEAU : mode serveur (reconnaissance vocale déportée)
-  // ---------------------------------------------------------------------
-
-  /// Vérifie que le serveur est configuré ET joignable (requête légère avec
-  /// timeout court, pour ne pas bloquer l'app si le serveur est éteint).
   Future<bool> _serveurJoignable() async {
     if (_urlServeurSTT.trim().isEmpty) return false;
     try {
@@ -1471,8 +1346,6 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
         }
       }
 
-      // Le serveur a répondu mais sans texte exploitable : on informe et on
-      // s'arrête là pour cette tentative (l'utilisateur peut réessayer).
       setState(() {
         _recognizedText =
             "Le serveur n'a pas pu reconnaître la phrase. Réessaie.";
@@ -1486,11 +1359,6 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
   }
 
   void _toggleListening() async {
-    // NOUVEAU : mode serveur en priorité absolue s'il est configuré et
-    // joignable (meilleure précision, gros vocabulaire). Si l'adresse est
-    // vide (réglage par défaut) ou le serveur injoignable, on retombe sans
-    // bruit sur Vosk local juste en dessous : le comportement actuel de
-    // l'app n'est donc pas affecté tant qu'aucun serveur n'est configuré.
     if (_urlServeurSTT.trim().isNotEmpty) {
       if (_enregistrementServeurEnCours) {
         await _arreterEtEnvoyerAuServeur();
@@ -1507,8 +1375,6 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
       });
     }
 
-    // Priorité au moteur offline (Vosk) s'il est chargé et prêt : ça permet
-    // à la reconnaissance vocale de fonctionner même sans connexion internet.
     if (_sherpaReady && _voskSpeechService != null) {
       if (_isListening) {
         await _voskSpeechService!.stop();
@@ -1523,8 +1389,6 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
       return;
     }
 
-    // Sinon, on retombe sur la reconnaissance vocale en ligne (Google) comme
-    // avant.
     if (!_speechEnabled) {
       await _speak(AppLocalizations.of(context)!.microphonePermissionDenied);
       return;
