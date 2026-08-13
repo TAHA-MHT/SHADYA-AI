@@ -344,10 +344,7 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
 
   Timer? _minuteurActif;
 
-  final String _urlServeurSTT = '';
-  AudioRecorder? _recorder;
-  bool _enregistrementServeurEnCours = false;
-
+  
   late final Map<String, int> _dictionnaireNombres = _construireDictionnaireNombres();
 
   final TuyaService _tuyaService = TuyaService();
