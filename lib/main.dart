@@ -58,7 +58,7 @@ Future<void> main() async {
     options: DefaultFirebaseOptions.currentPlatform,
   );
   await FirebaseAppCheck.instance.activate(
-    androidProvider: AndroidProvider.debug,
+    providerAndroid: AndroidProvider.debug,
   );
 
   runApp(const ShadyaApp());
@@ -317,6 +317,11 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
   final stt.SpeechToText _speech = stt.SpeechToText();
   final FlutterTts _tts = FlutterTts();
 
+  // Enregistreur Audio pour alimenter le Dataset
+  final AudioRecorder _datasetRecorder = AudioRecorder();
+  bool _isRecordingDataset = false;
+  String? _lastRecordedDatasetPath;
+
   late final GenerativeModel _model;
 
   bool _speechEnabled = false;
@@ -344,7 +349,6 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
 
   Timer? _minuteurActif;
 
-  
   late final Map<String, int> _dictionnaireNombres = _construireDictionnaireNombres();
 
   final TuyaService _tuyaService = TuyaService();
@@ -356,6 +360,46 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
     'climatiseur': DeviceType.airConditioner,
     'clim': DeviceType.airConditioner,
   };
+
+  // ------------------------------------------------------------
+  // FONCTIONS DE COLLECTE D'AUDIO POUR LE DATASET
+  // ------------------------------------------------------------
+  Future<void> _startDatasetRecording() async {
+    try {
+      if (await _datasetRecorder.hasPermission()) {
+        final directory = await getApplicationDocumentsDirectory();
+        final String filePath =
+            '${directory.path}/dataset_vocal_${DateTime.now().millisecondsSinceEpoch}.m4a';
+
+        await _datasetRecorder.start(
+          const RecordConfig(encoder: AudioEncoder.aacLc),
+          path: filePath,
+        );
+
+        setState(() {
+          _isRecordingDataset = true;
+        });
+        debugPrint("Enregistrement du vocal dataset démarré : $filePath");
+      }
+    } catch (e) {
+      debugPrint("Erreur lancement enregistrement dataset: $e");
+    }
+  }
+
+  Future<String?> _stopDatasetRecording() async {
+    try {
+      final String? path = await _datasetRecorder.stop();
+      setState(() {
+        _isRecordingDataset = false;
+        _lastRecordedDatasetPath = path;
+      });
+      debugPrint("Vocal dataset sauvegardé sous : $path");
+      return path;
+    } catch (e) {
+      debugPrint("Erreur arrêt enregistrement dataset: $e");
+      return null;
+    }
+  }
 
   Future<String?> _essayerCommandeTuya(String texte) async {
     final texteMinuscule = texte.toLowerCase();
@@ -542,6 +586,7 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
   @override
   void dispose() {
     _minuteurActif?.cancel();
+    _datasetRecorder.dispose(); // Fermeture propre du recorder pour le dataset
 
     super.dispose();
   }
@@ -1317,7 +1362,9 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
             _analyserEtRepondre(result.recognizedWords);
           }
         },
-        localeId: 'fr_FR',
+        listenOptions: stt.SpeechListenOptions(
+          partialResults: true,
+        ),
       );
     }
   }
@@ -1373,6 +1420,40 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
                   style: Theme.of(context).textTheme.titleLarge,
                 ),
               ),
+              const SizedBox(height: 16),
+              
+              // ------------------------------------------------------------
+              // BOUTON DE CAPTURE VOCALE POUR ALIMENTER LE DATASET
+              // ------------------------------------------------------------
+              ElevatedButton.icon(
+                onPressed: () async {
+                  if (_isRecordingDataset) {
+                    await _stopDatasetRecording();
+                  } else {
+                    await _startDatasetRecording();
+                  }
+                },
+                icon: Icon(_isRecordingDataset ? Icons.stop : Icons.fiber_manual_record),
+                label: Text(_isRecordingDataset
+                    ? "Arrêter l'enregistrement dataset"
+                    : "Enregistrer un vocal (Dataset)"),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: _isRecordingDataset ? Colors.red : Colors.green,
+                  foregroundColor: Colors.white,
+                ),
+              ),
+              if (_lastRecordedDatasetPath != null) ...[
+                const SizedBox(height: 8),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                  child: Text(
+                    "Vocal sauvegardé : $_lastRecordedDatasetPath",
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(fontSize: 11, color: Colors.grey),
+                  ),
+                ),
+              ],
+
               if (_sherpaStatus.isNotEmpty && !_sherpaReady) ...[
                 const SizedBox(height: 16),
                 Padding(
