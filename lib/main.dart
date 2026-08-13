@@ -5,6 +5,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show compute;
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_ai/firebase_ai.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:flutter_tts/flutter_tts.dart';
@@ -27,9 +28,6 @@ import 'l10n/app_localizations.dart';
 import 'services/device_registry.dart';
 import 'services/tuya_service.dart';
 
-/// Écrit une entrée dans le fichier crash_log.txt (append), pour pouvoir
-/// consulter l'historique des erreurs via le panneau de debug caché,
-/// sans avoir besoin d'adb/Termux.
 Future<void> _ecrireCrashLog(String contenu) async {
   try {
     final appDir = await getApplicationSupportDirectory();
@@ -40,21 +38,17 @@ Future<void> _ecrireCrashLog(String contenu) async {
       mode: FileMode.append,
       flush: true,
     );
-  } catch (_) {
-    // Si même l'écriture du log échoue, on ne peut rien faire de plus.
-  }
+  } catch (_) {}
 }
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Capture les erreurs Flutter (widgets, build, etc.)
   FlutterError.onError = (FlutterErrorDetails details) {
     FlutterError.presentError(details);
     _ecrireCrashLog('${details.exceptionAsString()}\n${details.stack}');
   };
 
-  // Capture les erreurs Dart non gérées ailleurs (async, isolates racine, etc.)
   PlatformDispatcher.instance.onError = (error, stack) {
     _ecrireCrashLog('$error\n$stack');
     return true;
@@ -70,9 +64,6 @@ Future<void> main() async {
   runApp(const ShadyaApp());
 }
 
-/// Extraction en streaming : lit, décompresse et écrit sur le disque par
-/// blocs successifs, sans jamais charger le fichier .tar.bz2 entier (398 Mo)
-/// en mémoire d'un coup.
 Future<void> _extraireArchiveIsolate(List<String> params) async {
   final archivePath = params[0];
   final outputDirPath = params[1];
@@ -105,7 +96,212 @@ class ShadyaApp extends StatelessWidget {
           brightness: Brightness.dark,
         ),
       ),
-      home: const VoiceHomeScreen(),
+      home: const AuthWrapper(),
+    );
+  }
+}
+
+/// Gestionnaire d'état d'authentification
+class AuthWrapper extends StatelessWidget {
+  const AuthWrapper({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<User?>(
+      stream: FirebaseAuth.instance.authStateChanges(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
+          );
+        }
+        if (snapshot.hasData) {
+          return const VoiceHomeScreen();
+        }
+        return const AuthScreen();
+      },
+    );
+  }
+}
+
+/// Écran de Connexion / Inscription
+class AuthScreen extends StatefulWidget {
+  const AuthScreen({super.key});
+
+  @override
+  State<AuthScreen> createState() => _AuthScreenState();
+}
+
+class _AuthScreenState extends State<AuthScreen> {
+  final _emailController = TextEditingController();
+  final _passwordController = TextEditingController();
+  bool _isSignUp = false;
+  bool _isLoading = false;
+  String? _errorMessage;
+
+  @override
+  void dispose() {
+    _emailController.dispose();
+    _passwordController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    final email = _emailController.text.trim();
+    final password = _passwordController.text.trim();
+
+    if (email.isEmpty || password.isEmpty) {
+      setState(() => _errorMessage = "Veuillez remplir tous les champs.");
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    try {
+      if (_isSignUp) {
+        await FirebaseAuth.instance.createUserWithEmailAndPassword(
+          email: email,
+          password: password,
+        );
+      } else {
+        await FirebaseAuth.instance.signInWithEmailAndPassword(
+          email: email,
+          password: password,
+        );
+      }
+    } on FirebaseAuthException catch (e) {
+      setState(() {
+        switch (e.code) {
+          case 'user-not-found':
+            _errorMessage = "Aucun utilisateur trouvé avec cet email.";
+            break;
+          case 'wrong-password':
+            _errorMessage = "Mot de passe incorrect.";
+            break;
+          case 'email-already-in-use':
+            _errorMessage = "Cet email est déjà utilisé.";
+            break;
+          case 'weak-password':
+            _errorMessage = "Le mot de passe doit faire au moins 6 caractères.";
+            break;
+          case 'invalid-email':
+            _errorMessage = "Format d'email invalide.";
+            break;
+          default:
+            _errorMessage = e.message ?? "Erreur d'authentification.";
+        }
+      });
+    } catch (e) {
+      setState(() => _errorMessage = "Une erreur est survenue.");
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: SafeArea(
+        child: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(24.0),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(
+                  Icons.psychology,
+                  size: 80,
+                  color: Color(0xFFC4E100),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  _isSignUp ? "Créer un compte" : "Bienvenue sur Shadya",
+                  style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  _isSignUp
+                      ? "Inscrivez-vous pour utiliser votre assistant"
+                      : "Connectez-vous pour continuer",
+                  style: const TextStyle(color: Colors.grey),
+                ),
+                const SizedBox(height: 32),
+                TextField(
+                  controller: _emailController,
+                  keyboardType: TextInputType.emailAddress,
+                  decoration: InputDecoration(
+                    labelText: "Email",
+                    prefixIcon: const Icon(Icons.email_outlined),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: _passwordController,
+                  obscureText: true,
+                  decoration: InputDecoration(
+                    labelText: "Mot de passe",
+                    prefixIcon: const Icon(Icons.lock_outline),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                ),
+                if (_errorMessage != null) ...[
+                  const SizedBox(height: 16),
+                  Text(
+                    _errorMessage!,
+                    style: const TextStyle(color: Colors.red, fontSize: 13),
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+                const SizedBox(height: 24),
+                SizedBox(
+                  width: double.infinity,
+                  height: 50,
+                  child: ElevatedButton(
+                    onPressed: _isLoading ? null : _submit,
+                    style: ElevatedButton.styleFrom(
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    child: _isLoading
+                        ? const CircularProgressIndicator()
+                        : Text(
+                            _isSignUp ? "S'inscrire" : "Se connecter",
+                            style: const TextStyle(fontSize: 16),
+                          ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                TextButton(
+                  onPressed: () {
+                    setState(() {
+                      _isSignUp = !_isSignUp;
+                      _errorMessage = null;
+                    });
+                  },
+                  child: Text(
+                    _isSignUp
+                        ? "Déjà un compte ? Se connecter"
+                        : "Pas encore de compte ? S'inscrire",
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
@@ -396,7 +592,7 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
       setState(() {
         _sherpaModelPathDetecte = modelPathExistant;
         _sherpaStatus =
-            "Modèle détecté sur le disque. Appuie sur le bouton pour le charger (risque de crash si le modèle est corrompu).";
+            "Modèle détecté sur le disque. Appuie sur le bouton pour le charger.";
       });
     } else {
       setState(() {
@@ -419,8 +615,7 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
       if (result == null) {
         setState(() {
           _sherpaEnCours = false;
-          _sherpaStatus =
-              "Aucun fichier sélectionné. Appuie à nouveau sur le bouton pour réessayer.";
+          _sherpaStatus = "Aucun fichier sélectionné.";
         });
         return;
       }
@@ -429,8 +624,7 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
       final fichierChoisi = xFile.path;
 
       setState(() {
-        _sherpaStatus =
-            "Extraction du modèle vocal (patiente, ça peut prendre une minute)...";
+        _sherpaStatus = "Extraction du modèle vocal...";
       });
 
       final appDir = await getApplicationSupportDirectory();
@@ -448,8 +642,7 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
       if (modelPathExistant == null) {
         setState(() {
           _sherpaEnCours = false;
-          _sherpaStatus =
-              "Le fichier sélectionné ne semble pas être le bon modèle. Vérifie que tu as choisi le fichier .zip du modèle Vosk téléchargé, et réessaie.";
+          _sherpaStatus = "Fichier invalide. Veuillez sélectionner le modèle Vosk.";
         });
         return;
       }
@@ -458,7 +651,7 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
     } catch (e) {
       setState(() {
         _sherpaEnCours = false;
-        _sherpaStatus = "Erreur lors de la sélection/extraction: $e";
+        _sherpaStatus = "Erreur d'extraction: $e";
       });
     }
   }
@@ -476,22 +669,17 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
         return;
       }
       final path = result.files.first.xFile.path;
-      setState(() {
-        _tfliteTestResult = "Chargement de l'interpréteur TFLite...";
-      });
-
       final interpreter = tfl.Interpreter.fromFile(File(path));
       final nombreEntrees = interpreter.getInputTensors().length;
       interpreter.close();
 
       setState(() {
-        _tfliteTestResult =
-            "SUCCÈS : le modèle TFLite a été chargé sans crash (entrées: $nombreEntrees). Donc les bibliothèques natives lourdes fonctionnent en général sur cet appareil ; le problème est spécifique aux moteurs de reconnaissance vocale (sherpa-onnx et Vosk).";
+        _tfliteTestResult = "SUCCÈS (entrées: $nombreEntrees).";
       });
     } catch (e, stack) {
       await _ecrireCrashLog('Erreur test TFLite: $e\n$stack');
       setState(() {
-        _tfliteTestResult = "Erreur (catchable, pas un crash total) : $e";
+        _tfliteTestResult = "Erreur : $e";
       });
     }
   }
@@ -547,12 +735,11 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
     } catch (e) {
       setState(() {
         _sherpaEnCours = false;
-        _sherpaStatus = "Erreur de chargement du modèle: $e";
+        _sherpaStatus = "Erreur de chargement: $e";
       });
     }
   }
 
-  /// Ouvre une application externe avec url_launcher
   Future<bool> _essayerOuvrirApplication(String texte) async {
     final texteMinuscule = texte.toLowerCase().trim();
 
@@ -604,45 +791,14 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
       final crashFile = File('${appDir.path}/crash_log.txt');
       if (await crashFile.exists()) {
         crashLogTexte = await crashFile.readAsString();
-        if (crashLogTexte.trim().isEmpty) {
-          crashLogTexte = '(fichier crash_log.txt vide)';
-        }
       }
     } catch (e) {
       crashLogTexte = 'Erreur lecture crash_log.txt: $e';
     }
 
-    String listeFichiersModele = '(dossier modèle introuvable)';
-    try {
-      final appDir = await getApplicationSupportDirectory();
-      final modelDir = Directory('${appDir.path}/$_sherpaModelDirName');
-      if (await modelDir.exists()) {
-        final entites = await modelDir.list().toList();
-        if (entites.isEmpty) {
-          listeFichiersModele = '(dossier vide)';
-        } else {
-          final lignes = <String>[];
-          for (final entite in entites) {
-            if (entite is File) {
-              final taille = await entite.length();
-              final nom = entite.path.split('/').last;
-              lignes.add('$nom — $taille octets');
-            } else {
-              final nom = entite.path.split('/').last;
-              lignes.add('$nom/ (dossier)');
-            }
-          }
-          lignes.sort();
-          listeFichiersModele = lignes.join('\n');
-        }
-      }
-    } catch (e) {
-      listeFichiersModele = 'Erreur listage dossier modèle: $e';
-    }
-
     setState(() {
       _debugSecretInfo =
-          'Sherpa prêt: $_sherpaReady\n\nStatut: $_sherpaStatus\n\n--- Fichiers dans $_sherpaModelDirName ---\n$listeFichiersModele\n\n--- crash_log.txt ---\n$crashLogTexte';
+          'Sherpa prêt: $_sherpaReady\n\n--- crash_log.txt ---\n$crashLogTexte';
     });
   }
 
@@ -658,7 +814,7 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
       });
     } catch (e) {
       setState(() {
-        _debugSecretInfo = 'Erreur suppression crash_log.txt: $e';
+        _debugSecretInfo = 'Erreur suppression: $e';
       });
     }
   }
@@ -694,22 +850,6 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
       }
     });
 
-    dict['soixante dix'] = 70;
-    dict['soixante et onze'] = 71;
-    for (int u = 2; u < 10; u++) {
-      dict['soixante ${onzeADixNeuf[u]}'] = 70 + u;
-    }
-
-    dict['quatre vingt'] = 80;
-    dict['quatre vingts'] = 80;
-    for (int u = 1; u < 10; u++) {
-      dict['quatre vingt ${unites[u]}'] = 80 + u;
-    }
-
-    for (int u = 0; u < 10; u++) {
-      dict['quatre vingt ${onzeADixNeuf[u]}'] = 90 + u;
-    }
-
     return dict;
   }
 
@@ -717,61 +857,6 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
     var texte = texteBrut.toLowerCase().replaceAll('-', ' ');
     texte = texte.replaceAll(RegExp(r'\s+'), ' ').trim();
     if (texte.isEmpty) return null;
-    return _parserMillions(texte);
-  }
-
-  int? _parserMillions(String texte) {
-    final direct = int.tryParse(texte.replaceAll(' ', ''));
-    if (direct != null) return direct;
-    if (texte.isEmpty) return null;
-
-    final mots = texte.split(' ');
-    final idx = mots.indexWhere((m) => m == 'million' || m == 'millions');
-    if (idx != -1) {
-      final avant = mots.sublist(0, idx).join(' ').trim();
-      final apres = mots.sublist(idx + 1).join(' ').trim();
-      final multiplicateur = avant.isEmpty ? 1 : (_parserMilliers(avant) ?? 1);
-      final reste = apres.isEmpty ? 0 : (_parserMilliers(apres) ?? 0);
-      return multiplicateur * 1000000 + reste;
-    }
-
-    return _parserMilliers(texte);
-  }
-
-  int? _parserMilliers(String texte) {
-    final direct = int.tryParse(texte.replaceAll(' ', ''));
-    if (direct != null) return direct;
-    if (texte.isEmpty) return null;
-
-    final mots = texte.split(' ');
-    final idx = mots.indexWhere((m) => m == 'mille');
-    if (idx != -1) {
-      final avant = mots.sublist(0, idx).join(' ').trim();
-      final apres = mots.sublist(idx + 1).join(' ').trim();
-      final multiplicateur = avant.isEmpty ? 1 : (_parserCentaines(avant) ?? 1);
-      final reste = apres.isEmpty ? 0 : (_parserCentaines(apres) ?? 0);
-      return multiplicateur * 1000 + reste;
-    }
-
-    return _parserCentaines(texte);
-  }
-
-  int? _parserCentaines(String texte) {
-    final direct = int.tryParse(texte.replaceAll(' ', ''));
-    if (direct != null) return direct;
-    if (texte.isEmpty) return null;
-
-    final centMatch = RegExp(r'^(.*?)\s*cents?\s*(.*)$').firstMatch(texte);
-    if (centMatch != null) {
-      final avant = centMatch.group(1)!.trim();
-      final apres = centMatch.group(2)!.trim();
-      final multiplicateur = avant.isEmpty ? 1 : (_dictionnaireNombres[avant] ?? 1);
-      final reste = apres.isEmpty
-          ? 0
-          : (_dictionnaireNombres[apres] ?? int.tryParse(apres) ?? 0);
-      return multiplicateur * 100 + reste;
-    }
-
     return _dictionnaireNombres[texte];
   }
 
@@ -798,7 +883,6 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
 
   String? _chercherCalcul(String texte) {
     final texteMin = texte.toLowerCase();
-
     const motsDeclencheurs = ['combien font', 'combien fait', 'combien ça fait', "c'est combien"];
     final aOperateur = RegExp(r'\b(plus|moins|fois|multiplié par|divisé par|divise par)\b').hasMatch(texteMin);
     final estCalcul = motsDeclencheurs.any((m) => texteMin.contains(m)) || aOperateur;
@@ -884,7 +968,7 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
     if (secondesVal != null) totalSecondes += secondesVal;
 
     if (totalSecondes <= 0) {
-      return "Je n'ai pas compris la durée du minuteur. Essaie par exemple : lance un minuteur de cinq minutes.";
+      return "Je n'ai pas compris la durée du minuteur.";
     }
 
     _minuteurActif?.cancel();
@@ -898,12 +982,7 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
       }
     });
 
-    final dureeTexte = totalSecondes >= 60
-        ? "${totalSecondes ~/ 60} minute(s)"
-            "${totalSecondes % 60 > 0 ? ' et ${totalSecondes % 60} seconde(s)' : ''}"
-        : "$totalSecondes seconde(s)";
-
-    return "D'accord, minuteur lancé pour $dureeTexte.";
+    return "D'accord, minuteur lancé pour $totalSecondes seconde(s).";
   }
 
   String _descriptionMeteo(int code) {
@@ -970,17 +1049,13 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
   Future<String> _rechercheGemini(String texte) async {
     try {
       final prompt =
-          "L'utilisateur te demande de faire une recherche d'information sur : \"$texte\". "
-          "Réponds avec les informations les plus précises et utiles que tu connais, "
-          "de façon claire et concise (3-4 phrases maximum). "
-          "Si tu n'es pas certain de l'information la plus récente sur ce sujet, précise-le brièvement.";
+          "L'utilisateur te demande de faire une recherche sur : \"$texte\". Réponds clairement et de façon concise.";
       final content = [Content.text(prompt)];
       final response = await _model.generateContent(content);
-      return response.text ?? "Je n'ai pas trouvé d'information sur ce sujet.";
+      return response.text ?? "Je n'ai pas trouvé d'information.";
     } catch (e, stack) {
-      debugPrint("Erreur recherche Gemini: $e");
       await _ecrireCrashLog('Erreur recherche Gemini: $e\n$stack');
-      return "Je n'ai pas pu effectuer la recherche pour le moment.";
+      return "Je n'ai pas pu effectuer la recherche.";
     }
   }
 
@@ -1018,8 +1093,7 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
       return "Il est $heure.";
     }
     if (texteMinuscule.contains('quel jour') ||
-        texteMinuscule.contains('la date') ||
-        texteMinuscule.contains("date d'aujourd'hui")) {
+        texteMinuscule.contains('la date')) {
       final date = DateFormat('EEEE d MMMM y', 'fr_FR').format(DateTime.now());
       return "Nous sommes le $date.";
     }
@@ -1041,9 +1115,7 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
 
     if (nomRecherche.isEmpty) {
       const message = "Dis-moi quel nom tu veux que j'appelle.";
-      setState(() {
-        _recognizedText = message;
-      });
+      setState(() => _recognizedText = message);
       await _speak(message);
       return true;
     }
@@ -1058,18 +1130,14 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
 
     if (contactTrouve == null || contactTrouve.phones.isEmpty) {
       final message = "Je n'ai pas trouvé de contact nommé $nomRecherche.";
-      setState(() {
-        _recognizedText = message;
-      });
+      setState(() => _recognizedText = message);
       await _speak(message);
       return true;
     }
 
     final numero = contactTrouve.phones.first.number;
     final message = "J'ouvre l'appel vers ${contactTrouve.displayName}.";
-    setState(() {
-      _recognizedText = message;
-    });
+    setState(() => _recognizedText = message);
     await _speak(message);
 
     final uri = Uri(scheme: 'tel', path: numero);
@@ -1096,8 +1164,6 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
           await _speak(AppLocalizations.of(context)!.greeting);
         }
       });
-    } else {
-      setState(() {});
     }
   }
 
@@ -1111,69 +1177,52 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
   void _analyserEtRepondre(String texteEntendu) async {
     if (texteEntendu.trim().isEmpty) return;
 
-    // Intercepte les ouvertures d'applications avant tout le reste
     final appOuverte = await _essayerOuvrirApplication(texteEntendu);
-    if (appOuverte) {
-      return;
-    }
+    if (appOuverte) return;
 
-    setState(() {
-      _recognizedText = "Shadya réfléchit...";
-    });
+    setState(() => _recognizedText = "Shadya réfléchit...");
 
     final commandeContactTraitee = await _essayerCommandeContact(texteEntendu);
     if (commandeContactTraitee) return;
 
     final reponseTuya = await _essayerCommandeTuya(texteEntendu);
     if (reponseTuya != null) {
-      setState(() {
-        _recognizedText = "Shadya : $reponseTuya";
-      });
+      setState(() => _recognizedText = "Shadya : $reponseTuya");
       await _speak(reponseTuya);
       return;
     }
 
     final reponseDomotique = _chercherCommandeLocale(texteEntendu);
     if (reponseDomotique != null) {
-      setState(() {
-        _recognizedText = "Shadya : $reponseDomotique";
-      });
+      setState(() => _recognizedText = "Shadya : $reponseDomotique");
       await _speak(reponseDomotique);
       return;
     }
 
     final reponseFixe = _chercherReponseFixe(texteEntendu);
     if (reponseFixe != null) {
-      setState(() {
-        _recognizedText = "Shadya : $reponseFixe";
-      });
+      setState(() => _recognizedText = "Shadya : $reponseFixe");
       await _speak(reponseFixe);
       return;
     }
 
     final reponseSysteme = _chercherCommandeSysteme(texteEntendu);
     if (reponseSysteme != null) {
-      setState(() {
-        _recognizedText = "Shadya : $reponseSysteme";
-      });
+      setState(() => _recognizedText = "Shadya : $reponseSysteme");
       await _speak(reponseSysteme);
       return;
     }
 
     final resultatCalcul = _chercherCalcul(texteEntendu);
     if (resultatCalcul != null) {
-      setState(() {
-        _recognizedText = "Shadya : $resultatCalcul";
-      });
+      setState(() => _recognizedText = "Shadya : $resultatCalcul");
       await _speak(resultatCalcul);
       return;
     }
 
     if (_estCommandeMinuteur(texteEntendu)) {
       final resultatMinuteur = _demarrerMinuteur(texteEntendu);
-      setState(() {
-        _recognizedText = "Shadya : $resultatMinuteur";
-      });
+      setState(() => _recognizedText = "Shadya : $resultatMinuteur");
       await _speak(resultatMinuteur);
       return;
     }
@@ -1185,18 +1234,13 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
     if (estMeteo) {
       final connecteMeteo = await _estConnecte();
       if (!connecteMeteo) {
-        const messageMeteo =
-            "La météo nécessite une connexion internet, et je n'en ai pas actuellement.";
-        setState(() {
-          _recognizedText = messageMeteo;
-        });
+        const messageMeteo = "Connexion requise pour la météo.";
+        setState(() => _recognizedText = messageMeteo);
         await _speak(messageMeteo);
         return;
       }
       final resultatMeteo = await _obtenirMeteo(texteEntendu);
-      setState(() {
-        _recognizedText = "Shadya : $resultatMeteo";
-      });
+      setState(() => _recognizedText = "Shadya : $resultatMeteo");
       await _speak(resultatMeteo);
       return;
     }
@@ -1204,178 +1248,44 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
     if (_estCommandeRecherche(texteEntendu)) {
       final connecteRecherche = await _estConnecte();
       if (!connecteRecherche) {
-        const messageRecherche =
-            "La recherche nécessite une connexion internet, et je n'en ai pas actuellement.";
-        setState(() {
-          _recognizedText = messageRecherche;
-        });
+        const messageRecherche = "Connexion requise pour la recherche.";
+        setState(() => _recognizedText = messageRecherche);
         await _speak(messageRecherche);
         return;
       }
-      setState(() {
-        _recognizedText = "Shadya recherche...";
-      });
+      setState(() => _recognizedText = "Shadya recherche...");
       final resultatRecherche = await _rechercheGemini(texteEntendu);
-      setState(() {
-        _recognizedText = "Shadya : $resultatRecherche";
-      });
+      setState(() => _recognizedText = "Shadya : $resultatRecherche");
       await _speak(resultatRecherche);
       return;
     }
 
     final connecte = await _estConnecte();
-
     if (!connecte) {
-      const messageHorsLigne =
-          "Je n'ai pas de connexion internet, je ne peux pas répondre à cette question maintenant.";
-      setState(() {
-        _recognizedText = messageHorsLigne;
-      });
+      const messageHorsLigne = "Pas de connexion internet.";
+      setState(() => _recognizedText = messageHorsLigne);
       await _speak(messageHorsLigne);
       return;
     }
 
     try {
       final promptInstructions =
-          "Tu es Shadya, une assistante vocale chaleureuse et serviable. "
-          "Réponds de manière amicale, naturelle et très courte (maximum 2 phrases). "
-          "Voici la question de l'utilisateur : $texteEntendu";
+          "Tu es Shadya, une assistante vocale chaleureuse. Réponds très court (1-2 phrases) : $texteEntendu";
 
       final content = [Content.text(promptInstructions)];
       final response = await _model.generateContent(content);
       final reponseIA = response.text ?? "Je n'ai pas pu formuler de réponse.";
 
-      setState(() {
-        _recognizedText = "Shadya : $reponseIA";
-      });
-
+      setState(() => _recognizedText = "Shadya : $reponseIA");
       await _speak(reponseIA);
     } catch (e) {
-      debugPrint("Erreur Gemini API: $e");
-
-      final erreurTexte = e.toString().toLowerCase();
-      String messageErreur;
-
-      if (erreurTexte.contains('quota') || erreurTexte.contains('429')) {
-        messageErreur =
-            "Je suis très sollicitée en ce moment. Réessaie dans une minute.";
-      } else if (erreurTexte.contains('500') ||
-          erreurTexte.contains('internal') ||
-          erreurTexte.contains('high demand')) {
-        messageErreur =
-            "Le service est momentanément occupé. Réessaie dans quelques instants.";
-      } else {
-        messageErreur =
-            "Je n'ai pas pu contacter le service en ligne pour cette question.";
-      }
-
-      setState(() {
-        _recognizedText = messageErreur;
-      });
+      const messageErreur = "Erreur de connexion au service en ligne.";
+      setState(() => _recognizedText = messageErreur);
       await _speak(messageErreur);
     }
   }
 
-  Future<bool> _serveurJoignable() async {
-    if (_urlServeurSTT.trim().isEmpty) return false;
-    try {
-      final response = await http
-          .get(Uri.parse('$_urlServeurSTT/status'))
-          .timeout(const Duration(seconds: 3));
-      return response.statusCode == 200;
-    } catch (_) {
-      return false;
-    }
-  }
-
-  Future<void> _demarrerEnregistrementServeur() async {
-    _recorder ??= AudioRecorder();
-
-    final permissionOk = await _recorder!.hasPermission();
-    if (!permissionOk) {
-      setState(() {
-        _recognizedText = "Permission micro refusée pour l'enregistrement.";
-      });
-      return;
-    }
-
-    final tempDir = await getTemporaryDirectory();
-    final chemin = '${tempDir.path}/shadya_question.wav';
-
-    await _recorder!.start(
-      const RecordConfig(
-        encoder: AudioEncoder.wav,
-        sampleRate: 16000,
-        numChannels: 1,
-      ),
-      path: chemin,
-    );
-
-    setState(() {
-      _enregistrementServeurEnCours = true;
-      _isListening = true;
-      _recognizedText = '';
-    });
-  }
-
-  Future<void> _arreterEtEnvoyerAuServeur() async {
-    if (_recorder == null) return;
-
-    final chemin = await _recorder!.stop();
-    setState(() {
-      _enregistrementServeurEnCours = false;
-      _isListening = false;
-      _recognizedText = "Envoi au serveur...";
-    });
-
-    if (chemin == null) return;
-
-    try {
-      final uri = Uri.parse('$_urlServeurSTT/reconnaitre');
-      final requete = http.MultipartRequest('POST', uri);
-      requete.files.add(await http.MultipartFile.fromPath('audio', chemin));
-
-      final reponseFlux = await requete.send().timeout(const Duration(seconds: 15));
-      final reponse = await http.Response.fromStream(reponseFlux);
-
-      if (reponse.statusCode == 200) {
-        final data = jsonDecode(reponse.body) as Map<String, dynamic>;
-        final texte = (data['text'] as String?) ?? '';
-        if (texte.isNotEmpty) {
-          _analyserEtRepondre(texte);
-          return;
-        }
-      }
-
-      setState(() {
-        _recognizedText =
-            "Le serveur n'a pas pu reconnaître la phrase. Réessaie.";
-      });
-    } catch (e) {
-      setState(() {
-        _recognizedText =
-            "Impossible de contacter le serveur. Vérifie qu'il est bien allumé et sur le même réseau.";
-      });
-    }
-  }
-
   void _toggleListening() async {
-    if (_urlServeurSTT.trim().isNotEmpty) {
-      if (_enregistrementServeurEnCours) {
-        await _arreterEtEnvoyerAuServeur();
-        return;
-      }
-      final joignable = await _serveurJoignable();
-      if (joignable) {
-        await _demarrerEnregistrementServeur();
-        return;
-      }
-      setState(() {
-        _recognizedText =
-            "Serveur injoignable, reconnaissance locale utilisée à la place.";
-      });
-    }
-
     if (_sherpaReady && _voskSpeechService != null) {
       if (_isListening) {
         await _voskSpeechService!.stop();
@@ -1404,10 +1314,7 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
       });
       await _speech.listen(
         onResult: (result) {
-          setState(() {
-            _recognizedText = result.recognizedWords;
-          });
-
+          setState(() => _recognizedText = result.recognizedWords);
           if (result.finalResult) {
             setState(() => _isListening = false);
             _analyserEtRepondre(result.recognizedWords);
@@ -1421,13 +1328,34 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
   @override
   Widget build(BuildContext context) {
     final loc = AppLocalizations.of(context)!;
+    final user = FirebaseAuth.instance.currentUser;
+
     return Scaffold(
+      appBar: AppBar(
+        title: Text(loc.appTitle),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.logout),
+            tooltip: "Déconnexion",
+            onPressed: () => FirebaseAuth.instance.signOut(),
+          ),
+        ],
+      ),
       body: SafeArea(
         child: SingleChildScrollView(
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const SizedBox(height: 24),
+              if (user?.email != null) ...[
+                Padding(
+                  padding: const EdgeInsets.only(top: 8.0),
+                  child: Text(
+                    "Connecté : ${user!.email}",
+                    style: const TextStyle(fontSize: 12, color: Colors.grey),
+                  ),
+                ),
+              ],
+              const SizedBox(height: 16),
               GestureDetector(
                 onLongPress: _afficherDiagnosticSherpa,
                 child: Text(
@@ -1463,8 +1391,7 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
                 const SizedBox(height: 16),
                 ElevatedButton(
                   onPressed: _choisirEtExtraireModele,
-                  child: const Text(
-                      "Sélectionner le fichier du modèle vocal"),
+                  child: const Text("Sélectionner le fichier du modèle vocal"),
                 ),
               ],
               if (_sherpaModelPathDetecte != null &&
@@ -1480,8 +1407,7 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
               const SizedBox(height: 24),
               OutlinedButton(
                 onPressed: _testerTflite,
-                child: const Text(
-                    "TEST DIAGNOSTIC : charger un modèle TFLite"),
+                child: const Text("TEST DIAGNOSTIC : charger un modèle TFLite"),
               ),
               if (_tfliteTestResult != null) ...[
                 const SizedBox(height: 12),
