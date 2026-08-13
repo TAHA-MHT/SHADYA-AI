@@ -58,8 +58,9 @@ Future<void> main() async {
     options: DefaultFirebaseOptions.currentPlatform,
   );
   await FirebaseAppCheck.instance.activate(
-    providerAndroid: AndroidProvider.debug,
-  );
+  providerAndroid: AndroidProvider.debug, // Remplace 'androidProvider' par 'providerAndroid' ou vice-versa
+);
+
 
   runApp(const ShadyaApp());
 }
