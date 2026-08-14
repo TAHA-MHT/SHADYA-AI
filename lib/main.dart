@@ -930,7 +930,6 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
       }
     }
 
-    // Sécurisation de l'accès aux numéros de téléphone pour éviter les crashs
     if (contactTrouve == null || contactTrouve.phones.isEmpty) {
       return false;
     }
@@ -1135,7 +1134,10 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(loc.appTitle),
+        title: GestureDetector(
+          onLongPress: _afficherDiagnosticSherpa,
+          child: Text(loc.appTitle),
+        ),
         centerTitle: true,
       ),
       body: SafeArea(
@@ -1143,15 +1145,7 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const SizedBox(height: 16),
-              GestureDetector(
-                onLongPress: _afficherDiagnosticSherpa,
-                child: Text(
-                  loc.appTitle,
-                  style: Theme.of(context).textTheme.headlineMedium,
-                ),
-              ),
-              const SizedBox(height: 24),
+              const SizedBox(height: 32),
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 32),
                 child: Text(
