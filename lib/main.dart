@@ -930,13 +930,16 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
       }
     }
 
+    // Sécurisation de l'accès aux numéros de téléphone pour éviter les crashs
     if (contactTrouve == null || contactTrouve.phones.isEmpty) {
       return false;
     }
 
     final numero = contactTrouve.phones.first.number;
-    final message = "Voici le contact de ${contactTrouve.displayName}. J'ouvre l'appel.";
-    setState(() => _recognizedText = "Contact trouvé : ${contactTrouve.displayName} ($numero)");
+    final displayName = contactTrouve.displayName;
+    final message = "Voici le contact de $displayName. J'ouvre l'appel.";
+    
+    setState(() => _recognizedText = "Contact trouvé : $displayName ($numero)");
     await _speak(message);
 
     final uri = Uri(scheme: 'tel', path: numero);
