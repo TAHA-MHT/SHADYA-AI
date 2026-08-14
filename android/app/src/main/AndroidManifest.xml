@@ -1,15 +1,20 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
     
+    <!-- Permissions Contacts & SMS -->
     <uses-permission android:name="android.permission.READ_CONTACTS" />
     <uses-permission android:name="android.permission.WRITE_CONTACTS" />
     <uses-permission android:name="android.permission.RECEIVE_SMS" />
     <uses-permission android:name="android.permission.READ_SMS" />
+
+    <!-- Permissions Téléphone & Appel -->
+    <uses-permission android:name="android.permission.CALL_PHONE" />
+
+    <!-- Permissions Audio, Réseau & Système -->
     <uses-sdk tools:overrideLibrary="org.vosk.vosk_flutter" />
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
-    <uses-permission android:name="android.permission.READ_CONTACTS" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
 
@@ -72,7 +77,18 @@
         </receiver>
 
     </application>
+
     <queries>
+        <!-- Application Téléphone (Nécessaire pour url_launcher avec tel:) -->
+        <intent>
+            <action android:name="android.intent.action.DIAL" />
+            <data android:scheme="tel" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.CALL" />
+            <data android:scheme="tel" />
+        </intent>
+
         <!-- Package des applications à lancer -->
         <package android:name="com.whatsapp" />
         <package android:name="com.facebook.katana" />
@@ -86,7 +102,7 @@
             <data android:scheme="https" />
         </intent>
 
-        <!-- Ton ancienne déclaration PROCESS_TEXT pour garder le texte -->
+        <!-- Traitement de texte -->
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT" />
             <data android:mimeType="text/plain" />
