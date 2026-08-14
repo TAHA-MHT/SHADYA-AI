@@ -346,15 +346,18 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
   }
 
   Future<void> _loadContacts() async {
-    if (await FlutterContacts.requestPermission()) {
-      final contacts = await FlutterContacts.getContacts(withProperties: true);
-      setState(() {
-        _contacts = contacts;
-      });
-    }
+  if (await FlutterContacts.requestPermission()) {
+    final contacts = await FlutterContacts.getContacts(
+      withProperties: true,
+      withPhoto: false,
+    );
+    setState(() {
+      _contacts = contacts;
+    });
   }
+}
 
-  Future<String?> _cheminModeleSiPresent() async {
+ Future<String?> _cheminModeleSiPresent() async {
     final appDir = await getApplicationSupportDirectory();
     final modelDir = Directory('${appDir.path}/$_sherpaModelDirName');
     if (await modelDir.exists()) {
