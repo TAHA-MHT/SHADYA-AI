@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="accessibility_service_description">Shadya utilise ce service pour vous aider à remplir des formulaires, créer des comptes et naviguer dans vos applications par commande vocale, notamment si vous ne savez pas lire.</string>
+</resources>
