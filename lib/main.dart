@@ -892,7 +892,18 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
 
   Future<bool> _essayerCommandeContact(String texte) async {
     final texteMinuscule = texte.toLowerCase();
-    final motsDeclencheurs = ['appelle', 'appeler', 'ouvre le contact', 'ouvre contact'];
+    final motsDeclencheurs = [
+      'appelle', 
+      'appeler', 
+      'ouvre le contact', 
+      'ouvre contact',
+      'cherche moi',
+      'cherche-moi',
+      'cherche',
+      'trouve moi',
+      'trouve-moi',
+      'trouve'
+    ];
 
     final estCommandeContact = motsDeclencheurs.any((mot) => texteMinuscule.contains(mot));
     if (!estCommandeContact) return false;
@@ -904,7 +915,7 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
     nomRecherche = nomRecherche.trim();
 
     if (nomRecherche.isEmpty) {
-      const message = "Dis-moi quel nom tu veux que j'appelle.";
+      const message = "Dis-moi quel nom tu veux que je cherche.";
       setState(() => _recognizedText = message);
       await _speak(message);
       return true;
@@ -919,15 +930,12 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
     }
 
     if (contactTrouve == null || contactTrouve.phones.isEmpty) {
-      final message = "Je n'ai pas trouvé de contact nommé $nomRecherche.";
-      setState(() => _recognizedText = message);
-      await _speak(message);
-      return true;
+      return false;
     }
 
     final numero = contactTrouve.phones.first.number;
-    final message = "J'ouvre l'appel vers ${contactTrouve.displayName}.";
-    setState(() => _recognizedText = message);
+    final message = "Voici le contact de ${contactTrouve.displayName}. J'ouvre l'appel.";
+    setState(() => _recognizedText = "Contact trouvé : ${contactTrouve.displayName} ($numero)");
     await _speak(message);
 
     final uri = Uri(scheme: 'tel', path: numero);
@@ -1064,7 +1072,7 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
 
       final content = [Content.text(promptInstructions)];
       final response = await _model.generateContent(content);
-      final reponseIA = response.text ?? "Je n'ai pas pou formuler de réponse.";
+      final reponseIA = response.text ?? "Je n'ai pas pu formuler de réponse.";
 
       setState(() => _recognizedText = "Shadya : $reponseIA");
       await _speak(reponseIA);
