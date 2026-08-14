@@ -923,7 +923,8 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
 
     Contact? contactTrouve;
     for (final contact in _contacts) {
-      if (contact.displayName.toLowerCase().contains(nomRecherche)) {
+      final nomContact = contact.displayName;
+      if (nomContact.toLowerCase().contains(nomRecherche)) {
         contactTrouve = contact;
         break;
       }
