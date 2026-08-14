@@ -7,10 +7,9 @@ import android.view.accessibility.AccessibilityNodeInfo
 
 class FacebookAutomationHandler(private val service: AccessibilityService) {
 
-    private var userFirstName = "Shadya"
-    private var userLastName = "User"
-    private var userPhone = "" 
-    private var userPassword = "ShadyaUser2026!" 
+    // Mis à jour par ShadyaAgentService juste avant chaque tentative,
+    // à partir de ce que l'utilisateur a dicté vocalement.
+    var userData: UserAccountData = UserAccountData()
 
     fun handleAccessibilityEvent(event: AccessibilityEvent) {
         val rootNode = service.rootInActiveWindow ?: return
@@ -24,23 +23,23 @@ class FacebookAutomationHandler(private val service: AccessibilityService) {
         val firstNameFields = findFieldsByHint(rootNode, listOf("Prénom", "First name"))
         val lastNameFields = findFieldsByHint(rootNode, listOf("Nom", "Last name", "Nom de famille"))
 
-        if (firstNameFields.isNotEmpty() && lastNameFields.isNotEmpty()) {
-            fillTextField(firstNameFields.first(), userFirstName)
-            fillTextField(lastNameFields.first(), userLastName)
+        if (firstNameFields.isNotEmpty() && lastNameFields.isNotEmpty() && userData.firstName.isNotEmpty()) {
+            fillTextField(firstNameFields.first(), userData.firstName)
+            fillTextField(lastNameFields.first(), userData.lastName)
             clickNextButton(rootNode)
             return
         }
 
         val phoneFields = findFieldsByHint(rootNode, listOf("Numéro de mobile", "Mobile number", "Téléphone"))
-        if (phoneFields.isNotEmpty() && userPhone.isNotEmpty()) {
-            fillTextField(phoneFields.first(), userPhone)
+        if (phoneFields.isNotEmpty() && userData.phone.isNotEmpty()) {
+            fillTextField(phoneFields.first(), userData.phone)
             clickNextButton(rootNode)
             return
         }
 
         val passwordFields = findFieldsByHint(rootNode, listOf("Mot de passe", "Password"))
-        if (passwordFields.isNotEmpty()) {
-            fillTextField(passwordFields.first(), userPassword)
+        if (passwordFields.isNotEmpty() && userData.password.isNotEmpty()) {
+            fillTextField(passwordFields.first(), userData.password)
             clickNextButton(rootNode)
             return
         }
