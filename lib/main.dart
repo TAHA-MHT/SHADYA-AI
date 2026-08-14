@@ -17,7 +17,6 @@ import 'package:http/http.dart' as http;
 import 'package:vosk_flutter_2/vosk_flutter_2.dart' as vosk;
 import 'package:tflite_flutter/tflite_flutter.dart' as tfl;
 import 'package:path_provider/path_provider.dart';
-import 'package:record/record.dart';
 import 'package:archive/archive_io.dart';
 import 'package:file_picker/file_picker.dart';
 
@@ -97,7 +96,6 @@ class ShadyaApp extends StatelessWidget {
           brightness: Brightness.dark,
         ),
       ),
-      // Accès direct à l'assistant vocal
       home: const VoiceHomeScreen(),
     );
   }
@@ -113,11 +111,6 @@ class VoiceHomeScreen extends StatefulWidget {
 class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
   final stt.SpeechToText _speech = stt.SpeechToText();
   final FlutterTts _tts = FlutterTts();
-
-  // Enregistreur Audio pour alimenter le Dataset
-  final AudioRecorder _datasetRecorder = AudioRecorder();
-  bool _isRecordingDataset = false;
-  String? _lastRecordedDatasetPath;
 
   late final GenerativeModel _model;
 
@@ -157,46 +150,6 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
     'climatiseur': DeviceType.airConditioner,
     'clim': DeviceType.airConditioner,
   };
-
-  // ------------------------------------------------------------
-  // FONCTIONS DE COLLECTE D'AUDIO POUR LE DATASET
-  // ------------------------------------------------------------
-  Future<void> _startDatasetRecording() async {
-    try {
-      if (await _datasetRecorder.hasPermission()) {
-        final directory = await getApplicationDocumentsDirectory();
-        final String filePath =
-            '${directory.path}/dataset_vocal_${DateTime.now().millisecondsSinceEpoch}.m4a';
-
-        await _datasetRecorder.start(
-          const RecordConfig(encoder: AudioEncoder.aacLc),
-          path: filePath,
-        );
-
-        setState(() {
-          _isRecordingDataset = true;
-        });
-        debugPrint("Enregistrement du vocal dataset démarré : $filePath");
-      }
-    } catch (e) {
-      debugPrint("Erreur lancement enregistrement dataset: $e");
-    }
-  }
-
-  Future<String?> _stopDatasetRecording() async {
-    try {
-      final String? path = await _datasetRecorder.stop();
-      setState(() {
-        _isRecordingDataset = false;
-        _lastRecordedDatasetPath = path;
-      });
-      debugPrint("Vocal dataset sauvegardé sous : $path");
-      return path;
-    } catch (e) {
-      debugPrint("Erreur arrêt enregistrement dataset: $e");
-      return null;
-    }
-  }
 
   Future<String?> _essayerCommandeTuya(String texte) async {
     final texteMinuscule = texte.toLowerCase();
@@ -383,8 +336,6 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
   @override
   void dispose() {
     _minuteurActif?.cancel();
-    _datasetRecorder.dispose();
-
     super.dispose();
   }
 
@@ -1113,7 +1064,7 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
 
       final content = [Content.text(promptInstructions)];
       final response = await _model.generateContent(content);
-      final reponseIA = response.text ?? "Je n'ai pas pu formuler de réponse.";
+      final reponseIA = response.text ?? "Je n'ai pas pou formuler de réponse.";
 
       setState(() => _recognizedText = "Shadya : $reponseIA");
       await _speak(reponseIA);
@@ -1202,35 +1153,6 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
                 ),
               ),
               const SizedBox(height: 16),
-              
-              ElevatedButton.icon(
-                onPressed: () async {
-                  if (_isRecordingDataset) {
-                    await _stopDatasetRecording();
-                  } else {
-                    await _startDatasetRecording();
-                  }
-                },
-                icon: Icon(_isRecordingDataset ? Icons.stop : Icons.fiber_manual_record),
-                label: Text(_isRecordingDataset
-                    ? "Arrêter l'enregistrement dataset"
-                    : "Enregistrer un vocal (Dataset)"),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: _isRecordingDataset ? Colors.red : Colors.green,
-                  foregroundColor: Colors.white,
-                ),
-              ),
-              if (_lastRecordedDatasetPath != null) ...[
-                const SizedBox(height: 8),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 24),
-                  child: Text(
-                    "Vocal sauvegardé : $_lastRecordedDatasetPath",
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(fontSize: 11, color: Colors.grey),
-                  ),
-                ),
-              ],
 
               if (_sherpaStatus.isNotEmpty && !_sherpaReady) ...[
                 const SizedBox(height: 16),
