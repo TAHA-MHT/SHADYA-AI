@@ -618,13 +618,13 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
     // Coupe au premier mot qui indique la suite de la phrase (numéro, mot de passe...)
     final motsCoupure = ['mon numéro', 'mon numero', 'et mon', 'téléphone', 'telephone'];
     for (final mot in motsCoupure) {
-      final idxCoupure = segmentNom.toLowerCase().indexOf(mot);
+      final idxCoupure = segmentNom!.toLowerCase().indexOf(mot);
       if (idxCoupure != -1) {
-        segmentNom = segmentNom.substring(0, idxCoupure).trim();
+        segmentNom = segmentNom!.substring(0, idxCoupure).trim();
       }
     }
 
-    final morceaux = segmentNom
+    final morceaux = segmentNom!
         .split(RegExp(r'\s+'))
         .where((m) => m.isNotEmpty)
         .toList();
