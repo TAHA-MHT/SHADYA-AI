@@ -1139,7 +1139,7 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
 
   void _analyserEtRepondre(String texteEntendu) async {
     if (texteEntendu.trim().isEmpty) return;
-
+    await _ecrireCrashLog('DEBUG - Texte reconnu: "$texteEntendu"');
     final appOuverte = await _essayerOuvrirApplication(texteEntendu);
     if (appOuverte) return;
 
