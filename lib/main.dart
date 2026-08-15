@@ -26,7 +26,7 @@ import 'l10n/app_localizations.dart';
 import 'services/device_registry.dart';
 import 'services/tuya_service.dart';
 import 'package:flutter/services.dart';
-import 'services/shadya_password_service.dart';
+import 'shadya_password_service.dart';
 
 class ShadyaAgentBridge {
   static const platform = MethodChannel('com.shadyaai.app/agent');
@@ -169,6 +169,11 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
   String _recognizedText = '';
   String? _debugSecretInfo;
   bool _showDebugPanel = false;
+
+  // État du flux de création de compte Facebook en plusieurs étapes
+  String? _facebookEtape; // null, "attente_nom", "attente_telephone"
+  String _facebookPrenomTemp = '';
+  String _facebookNomTemp = '';
 
   List<Contact> _contacts = [];
 
@@ -609,19 +614,21 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
     if (segmentNom == null || segmentNom.isEmpty) {
       return {'prenom': '', 'nom': ''};
     }
-// Coupe au premier mot qui indique la suite de la phrase (numéro, mot de passe...)
+
+    // Coupe au premier mot qui indique la suite de la phrase (numéro, mot de passe...)
     final motsCoupure = ['mon numéro', 'mon numero', 'et mon', 'téléphone', 'telephone'];
     for (final mot in motsCoupure) {
-      final idxCoupure = segmentNom!.toLowerCase().indexOf(mot);
+      final idxCoupure = segmentNom.toLowerCase().indexOf(mot);
       if (idxCoupure != -1) {
-        segmentNom = segmentNom!.substring(0, idxCoupure).trim();
+        segmentNom = segmentNom.substring(0, idxCoupure).trim();
       }
     }
 
-    final morceaux = segmentNom!
+    final morceaux = segmentNom
         .split(RegExp(r'\s+'))
         .where((m) => m.isNotEmpty)
         .toList();
+
     if (morceaux.isEmpty) return {'prenom': '', 'nom': ''};
 
     String capitaliser(String mot) =>
@@ -659,43 +666,90 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
     return numeroNettoye;
   }
 
+  // Gère le flux Facebook en plusieurs étapes si une étape est en attente.
+  // Retourne true si le texte a été traité dans le cadre de ce flux.
+  Future<bool> _gererFluxFacebook(String texte) async {
+    if (_facebookEtape == null) return false;
+
+    if (_facebookEtape == 'attente_nom') {
+      final infosNom = _extraireNomComplet(texte);
+      final motsTexte = texte.trim().split(RegExp(r'\s+'));
+      final prenom = infosNom['prenom']!.isNotEmpty
+          ? infosNom['prenom']!
+          : (motsTexte.isNotEmpty ? motsTexte.first : '');
+
+      if (prenom.isEmpty) {
+        await _speak("Je n'ai pas bien entendu ton nom. Peux-tu le répéter ?");
+        return true;
+      }
+
+      _facebookPrenomTemp = infosNom['prenom']!.isNotEmpty ? infosNom['prenom']! : prenom;
+      _facebookNomTemp = infosNom['nom']!;
+      _facebookEtape = 'attente_telephone';
+
+      await _speak("D'accord $_facebookPrenomTemp. Maintenant, dis-moi ton numéro de téléphone, chiffre par chiffre.");
+      return true;
+    }
+
+    if (_facebookEtape == 'attente_telephone') {
+      final telephone = _extraireNumeroTelephone(texte);
+
+      if (telephone.isEmpty) {
+        await _speak("Je n'ai pas bien compris le numéro. Peux-tu le redire, chiffre par chiffre ?");
+        return true;
+      }
+
+      _facebookEtape = null;
+
+      await _speak("D'accord, je m'occupe de ton compte Facebook.");
+
+      try {
+        final resultatCompte = await ShadyaAgentBridge.ouvrirCompteFacebook(
+          telephone: telephone,
+          prenom: _facebookPrenomTemp,
+          nom: _facebookNomTemp,
+        );
+
+        if (resultatCompte != null) {
+          final lecture = ShadyaPasswordService.formaterPourLectureVocale(resultatCompte);
+          await _speak("J'ai créé ton compte Facebook pour $_facebookPrenomTemp. Ton mot de passe est : $lecture. Je m'en souviens pour toi.");
+        } else {
+          await _speak("Je te reconnecte à ton compte Facebook.");
+        }
+      } catch (e, stack) {
+        await _ecrireCrashLog('Erreur ouvrirCompteFacebook: $e\n$stack');
+        await _speak("Il y a eu un problème technique avec Facebook.");
+      }
+
+      try {
+        final uriFacebook = Uri.parse('fb://');
+        if (await canLaunchUrl(uriFacebook)) {
+          await launchUrl(uriFacebook, mode: LaunchMode.externalApplication);
+        } else {
+          await launchUrl(Uri.parse('https://www.facebook.com'), mode: LaunchMode.externalApplication);
+        }
+      } catch (e, stack) {
+        await _ecrireCrashLog('Erreur ouverture Facebook: $e\n$stack');
+      }
+
+      _facebookPrenomTemp = '';
+      _facebookNomTemp = '';
+      return true;
+    }
+
+    return false;
+  }
+
   Future<bool> _essayerOuvrirApplication(String texte) async {
     final texteMinuscule = texte.toLowerCase().trim();
 
     final estCommandeOuverture = RegExp(r'\b(ouvre|lancer|lance|démarre|demarre)\b').hasMatch(texteMinuscule);
     if (!estCommandeOuverture) return false;
 
-    // Cas spécial Facebook : gestion automatique du compte avant ouverture
+    // Cas spécial Facebook : démarre le flux séquentiel (nom, puis téléphone)
     if (texteMinuscule.contains('facebook')) {
-      final infosNom = _extraireNomComplet(texte);
-      final telephone = _extraireNumeroTelephone(texte);
-
-      if (infosNom['prenom']!.isEmpty || telephone.isEmpty) {
-        await _speak("Pour créer ton compte Facebook, dis-moi ton nom complet et ton numéro de téléphone.");
-        return true;
-      }
-
-      await _speak("D'accord, je m'occupe de ton compte Facebook.");
-
-      final resultatCompte = await ShadyaAgentBridge.ouvrirCompteFacebook(
-        telephone: telephone,
-        prenom: infosNom['prenom']!,
-        nom: infosNom['nom']!,
-      );
-
-      if (resultatCompte != null) {
-        final lecture = ShadyaPasswordService.formaterPourLectureVocale(resultatCompte);
-        await _speak("J'ai créé ton compte Facebook pour ${infosNom['prenom']}. Ton mot de passe est : $lecture. Je m'en souviens pour toi.");
-      } else {
-        await _speak("Je te reconnecte à ton compte Facebook.");
-      }
-
-      final uriFacebook = Uri.parse('fb://');
-      if (await canLaunchUrl(uriFacebook)) {
-        await launchUrl(uriFacebook, mode: LaunchMode.externalApplication);
-      } else {
-        await launchUrl(Uri.parse('https://www.facebook.com'), mode: LaunchMode.externalApplication);
-      }
+      _facebookEtape = 'attente_nom';
+      await _speak("D'accord, je vais créer ou retrouver ton compte Facebook. Dis-moi ton prénom et ton nom.");
       return true;
     }
 
@@ -1139,7 +1193,13 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
 
   void _analyserEtRepondre(String texteEntendu) async {
     if (texteEntendu.trim().isEmpty) return;
+
     await _ecrireCrashLog('DEBUG - Texte reconnu: "$texteEntendu"');
+
+    // Priorité au flux Facebook en cours, s'il y en a un
+    final fluxFacebookTraite = await _gererFluxFacebook(texteEntendu);
+    if (fluxFacebookTraite) return;
+
     final appOuverte = await _essayerOuvrirApplication(texteEntendu);
     if (appOuverte) return;
 
