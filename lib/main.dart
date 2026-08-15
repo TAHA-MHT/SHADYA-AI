@@ -702,12 +702,18 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
     if (texteMinuscule.contains('facebook')) {
       await _speak("D'accord, je m'occupe de ton compte Facebook.");
 
-      // ⚠️ Remplace ces valeurs par celles réellement dictées par l'utilisateur
-      // (à connecter à ton système de reconnaissance de nom/téléphone existant)
+      final infosNom = _extraireNomComplet(texte);
+      final telephone = _extraireNumeroTelephone(texte);
+
+      if (infosNom['prenom']!.isEmpty || telephone.isEmpty) {
+        await _speak("Pour créer ton compte Facebook, dis-moi ton nom complet et ton numéro de téléphone.");
+        return true;
+      }
+
       final resultatCompte = await ShadyaAgentBridge.ouvrirCompteFacebook(
-        telephone: "+235XXXXXXXX", // à remplacer par le numéro dicté
-        prenom: "Prénom",          // à remplacer par le prénom dicté
-        nom: "Nom",                // à remplacer par le nom dicté
+        telephone: telephone,
+        prenom: infosNom['prenom']!,
+        nom: infosNom['nom']!,
       );
 
       if (resultatCompte != null) {
