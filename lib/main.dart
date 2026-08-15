@@ -582,6 +582,7 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
       });
     }
   }
+
   // Extrait prénom + nom depuis une phrase du type :
   // "je m'appelle Fatimé Hassan" / "mon nom est Fatimé Hassan" / "moi c'est Fatimé Hassan"
   Map<String, String> _extraireNomComplet(String texte) {
@@ -658,6 +659,15 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
     }
 
     return numeroNettoye;
+  }
+
+  Future<bool> _essayerOuvrirApplication(String texte) async {
+    final texteMinuscule = texte.toLowerCase().trim();
+
+    final estCommandeOuverture = RegExp(r'\b(ouvre|lancer|lance|démarre|demarre)\b').hasMatch(texteMinuscule);
+    if (!estCommandeOuverture) return false;
+
+    // Cas spécial Facebook : gestion automatique du compte avant ouverture
     if (texteMinuscule.contains('facebook')) {
       final infosNom = _extraireNomComplet(texte);
       final telephone = _extraireNumeroTelephone(texte);
@@ -678,47 +688,6 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
       if (resultatCompte != null) {
         final lecture = ShadyaPasswordService.formaterPourLectureVocale(resultatCompte);
         await _speak("J'ai créé ton compte Facebook pour ${infosNom['prenom']}. Ton mot de passe est : $lecture. Je m'en souviens pour toi.");
-      } else {
-        await _speak("Je te reconnecte à ton compte Facebook.");
-      }
-
-      final uriFacebook = Uri.parse('fb://');
-      if (await canLaunchUrl(uriFacebook)) {
-        await launchUrl(uriFacebook, mode: LaunchMode.externalApplication);
-      } else {
-        await launchUrl(Uri.parse('https://www.facebook.com'), mode: LaunchMode.externalApplication);
-      }
-      return true;
-    }
-  }
-
-  Future<bool> _essayerOuvrirApplication(String texte) async {
-    final texteMinuscule = texte.toLowerCase().trim();
-
-    final estCommandeOuverture = RegExp(r'\b(ouvre|lancer|lance|démarre|demarre)\b').hasMatch(texteMinuscule);
-    if (!estCommandeOuverture) return false;
-
-    // Cas spécial Facebook : gestion automatique du compte avant ouverture
-    if (texteMinuscule.contains('facebook')) {
-      await _speak("D'accord, je m'occupe de ton compte Facebook.");
-
-      final infosNom = _extraireNomComplet(texte);
-      final telephone = _extraireNumeroTelephone(texte);
-
-      if (infosNom['prenom']!.isEmpty || telephone.isEmpty) {
-        await _speak("Pour créer ton compte Facebook, dis-moi ton nom complet et ton numéro de téléphone.");
-        return true;
-      }
-
-      final resultatCompte = await ShadyaAgentBridge.ouvrirCompteFacebook(
-        telephone: telephone,
-        prenom: infosNom['prenom']!,
-        nom: infosNom['nom']!,
-      );
-
-      if (resultatCompte != null) {
-        final lecture = ShadyaPasswordService.formaterPourLectureVocale(resultatCompte);
-        await _speak("J'ai créé ton compte Facebook. Ton mot de passe est : $lecture. Je m'en souviens pour toi.");
       } else {
         await _speak("Je te reconnecte à ton compte Facebook.");
       }
@@ -763,7 +732,6 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
 
     return false;
   }
-  
 
   Future<void> _afficherDiagnosticSherpa() async {
     setState(() {
