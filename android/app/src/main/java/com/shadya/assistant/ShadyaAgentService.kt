@@ -18,8 +18,10 @@ class ShadyaAgentService : AccessibilityService() {
     companion object {
         // Rempli dynamiquement par MainActivity via MethodChannel
         var pendingUserData: UserAccountData = UserAccountData()
-        // "signup" ou "login" — dit à Shadya quel écran elle doit gérer
+        // "signup" ou "login" — dit à Shadya quel écran elle doit gérer (Facebook)
         var pendingMode: String = "signup"
+        // Rempli automatiquement par SmsCodeReceiver dès qu'un code OTP est détecté
+        var pendingOtpCode: String = ""
     }
 
     override fun onServiceConnected() {
@@ -39,6 +41,7 @@ class ShadyaAgentService : AccessibilityService() {
                     facebookAutomation.handleAccessibilityEvent(it)
                 }
                 "com.whatsapp", "com.whatsapp.w4b" -> {
+                    whatsAppAutomation.userData = pendingUserData
                     whatsAppAutomation.handleAccessibilityEvent(it)
                 }
             }
