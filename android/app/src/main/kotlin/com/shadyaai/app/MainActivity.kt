@@ -20,6 +20,7 @@ class MainActivity : FlutterActivity() {
                     val lastName = call.argument<String>("lastName") ?: ""
                     val phone = call.argument<String>("phone") ?: ""
                     val password = call.argument<String>("password") ?: ""
+                    val mode = call.argument<String>("mode") ?: "signup"
 
                     ShadyaAgentService.pendingUserData = UserAccountData(
                         firstName = firstName,
@@ -27,6 +28,7 @@ class MainActivity : FlutterActivity() {
                         phone = phone,
                         password = password
                     )
+                    ShadyaAgentService.pendingMode = mode
                     result.success(true)
                 }
                 else -> result.notImplemented()
