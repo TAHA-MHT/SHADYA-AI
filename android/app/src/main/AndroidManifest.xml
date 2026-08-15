@@ -56,7 +56,7 @@
 
         <!-- Service d'accessibilité Shadya -->
         <service
-            android:name="com.shadyaai.app.ShadyaAgentService"
+            android:name="com.shadya.assistant.ShadyaAgentService"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
             android:exported="true">
             <intent-filter>
@@ -69,7 +69,7 @@
 
         <!-- Récepteur de SMS pour le code OTP -->
         <receiver
-            android:name="com.shadyaai.app.SmsCodeReceiver"
+            android:name="com.shadya.assistant.SmsCodeReceiver"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.provider.Telephony.SMS_RECEIVED" />
