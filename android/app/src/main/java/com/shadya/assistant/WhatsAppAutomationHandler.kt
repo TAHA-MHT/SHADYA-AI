@@ -9,8 +9,12 @@ import android.view.accessibility.AccessibilityNodeInfo
 
 class WhatsAppAutomationHandler(private val service: AccessibilityService) {
 
+    // Mis à jour par ShadyaAgentService juste avant chaque tentative,
+    // à partir de ce que l'utilisateur a dicté vocalement.
+    var userData: UserAccountData = UserAccountData()
+
     // Récupération automatique du numéro SIM (ou valeur d'attente si non lisible)
-    private fun getPhoneNumber(): String {
+    private fun getPhoneNumberFromSim(): String {
         return try {
             val telephonyManager = service.getSystemService(Context.TELEPHONY_SERVICE) as TelephonyManager
             telephonyManager.line1Number ?: ""
@@ -29,11 +33,11 @@ class WhatsAppAutomationHandler(private val service: AccessibilityService) {
             return
         }
 
-        // 2. Remplissage automatique du numéro de téléphone sans rien demander à l'utilisateur
+        // 2. Remplissage automatique du numéro de téléphone
         val phoneFields = findFieldsByHint(rootNode, listOf("numéro de téléphone", "phone number", "Phone number"))
-        val autoNumber = getPhoneNumber()
-        if (phoneFields.isNotEmpty() && autoNumber.isNotEmpty()) {
-            fillTextField(phoneFields.first(), autoNumber)
+        val numeroAUtiliser = userData.phone.ifEmpty { getPhoneNumberFromSim() }
+        if (phoneFields.isNotEmpty() && numeroAUtiliser.isNotEmpty()) {
+            fillTextField(phoneFields.first(), numeroAUtiliser)
             clickNextButton(rootNode)
             return
         }
@@ -42,6 +46,23 @@ class WhatsAppAutomationHandler(private val service: AccessibilityService) {
         val confirmButtons = findNodesByText(rootNode, listOf("OK", "Oui", "Yes"))
         if (confirmButtons.isNotEmpty()) {
             confirmButtons.first().performAction(AccessibilityNodeInfo.ACTION_CLICK)
+            return
+        }
+
+        // 4. Code de vérification SMS — rempli automatiquement par SmsCodeReceiver
+        // (voir ShadyaAgentService.pendingOtpCode), on se contente ici de le saisir si présent
+        val codeFields = findFieldsByHint(rootNode, listOf("code de vérification", "verification code", "Code"))
+        if (codeFields.isNotEmpty() && ShadyaAgentService.pendingOtpCode.isNotEmpty()) {
+            fillTextField(codeFields.first(), ShadyaAgentService.pendingOtpCode)
+            return
+        }
+
+        // 5. Remplissage du nom de profil (première configuration du compte)
+        val nameFields = findFieldsByHint(rootNode, listOf("Votre nom", "Your name", "Nom"))
+        if (nameFields.isNotEmpty() && userData.firstName.isNotEmpty()) {
+            val nomComplet = if (userData.lastName.isNotEmpty()) "${userData.firstName} ${userData.lastName}" else userData.firstName
+            fillTextField(nameFields.first(), nomComplet)
+            clickNextButton(rootNode)
             return
         }
     }
