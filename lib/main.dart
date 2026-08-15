@@ -25,6 +25,56 @@ import 'firebase_options.dart';
 import 'l10n/app_localizations.dart';
 import 'services/device_registry.dart';
 import 'services/tuya_service.dart';
+import 'package:flutter/services.dart';
+import 'shadya_password_service.dart';
+
+class ShadyaAgentBridge {
+  static const platform = MethodChannel('com.shadyaai.app/agent');
+
+  // Point d'entrée unique : "ouvre-moi Facebook" passe toujours par ici.
+  // Gère automatiquement création de compte OU reconnexion, selon ce qui existe déjà.
+  static Future<String?> ouvrirCompteFacebook({
+    required String telephone,
+    String prenom = "",
+    String nom = "",
+  }) async {
+    final motDePasseExistant = await ShadyaPasswordService.recupererMotDePasse(
+      telephone: telephone,
+      plateforme: "facebook",
+    );
+
+    if (motDePasseExistant != null) {
+      // Un compte existe déjà pour ce numéro → mode connexion automatique
+      await platform.invokeMethod('setUserAccountData', {
+        'firstName': '',
+        'lastName': '',
+        'phone': telephone,
+        'password': motDePasseExistant,
+        'mode': 'login',
+      });
+      return null; // Pas de nouveau mot de passe à lire, Shadya se connecte silencieusement
+    } else {
+      // Aucun compte trouvé → mode création
+      final nouveauMotDePasse = ShadyaPasswordService.genererMotDePasseSecurise();
+
+      await ShadyaPasswordService.sauvegarderMotDePasse(
+        telephone: telephone,
+        plateforme: "facebook",
+        motDePasse: nouveauMotDePasse,
+      );
+
+      await platform.invokeMethod('setUserAccountData', {
+        'firstName': prenom,
+        'lastName': nom,
+        'phone': telephone,
+        'password': nouveauMotDePasse,
+        'mode': 'signup',
+      });
+
+      return nouveauMotDePasse; // À lire à voix haute une seule fois
+    }
+  }
+}
 
 Future<void> _ecrireCrashLog(String contenu) async {
   try {
