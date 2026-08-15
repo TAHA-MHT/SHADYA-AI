@@ -589,9 +589,36 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
     final estCommandeOuverture = RegExp(r'\b(ouvre|lancer|lance|démarre|demarre)\b').hasMatch(texteMinuscule);
     if (!estCommandeOuverture) return false;
 
+    // Cas spécial Facebook : gestion automatique du compte avant ouverture
+    if (texteMinuscule.contains('facebook')) {
+      await _speak("D'accord, je m'occupe de ton compte Facebook.");
+
+      // ⚠️ Remplace ces valeurs par celles réellement dictées par l'utilisateur
+      // (à connecter à ton système de reconnaissance de nom/téléphone existant)
+      final resultatCompte = await ShadyaAgentBridge.ouvrirCompteFacebook(
+        telephone: "+235XXXXXXXX", // à remplacer par le numéro dicté
+        prenom: "Prénom",          // à remplacer par le prénom dicté
+        nom: "Nom",                // à remplacer par le nom dicté
+      );
+
+      if (resultatCompte != null) {
+        final lecture = ShadyaPasswordService.formaterPourLectureVocale(resultatCompte);
+        await _speak("J'ai créé ton compte Facebook. Ton mot de passe est : $lecture. Je m'en souviens pour toi.");
+      } else {
+        await _speak("Je te reconnecte à ton compte Facebook.");
+      }
+
+      final uriFacebook = Uri.parse('fb://');
+      if (await canLaunchUrl(uriFacebook)) {
+        await launchUrl(uriFacebook, mode: LaunchMode.externalApplication);
+      } else {
+        await launchUrl(Uri.parse('https://www.facebook.com'), mode: LaunchMode.externalApplication);
+      }
+      return true;
+    }
+
     final appsSchemes = <String, String>{
       'whatsapp': 'whatsapp://',
-      'facebook': 'fb://',
       'youtube': 'https://www.youtube.com',
       'instagram': 'instagram://',
       'chrome': 'https://www.google.com',
@@ -621,6 +648,7 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
 
     return false;
   }
+  
 
   Future<void> _afficherDiagnosticSherpa() async {
     setState(() {
