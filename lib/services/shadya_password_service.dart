@@ -1,46 +1,48 @@
-import 'package:flutter/services.dart';
-import 'shadya_password_service.dart';
+import 'dart:math';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
-class ShadyaAgentBridge {
-  static const platform = MethodChannel('com.shadyaai.app/agent');
+class ShadyaPasswordService {
+  static const _storage = FlutterSecureStorage();
 
-  static Future<String> creerCompteAvecMotDePasseAuto({
-    required String prenom,
-    required String nom,
+  static String genererMotDePasseSecurise() {
+    const majuscules = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+    const minuscules = 'abcdefghijkmnpqrstuvwxyz';
+    const chiffres = '23456789';
+    const symboles = '!@#%*';
+
+    final random = Random.secure();
+
+    String tirer(String source, int n) =>
+        List.generate(n, (_) => source[random.nextInt(source.length)]).join();
+
+    final motDePasse = (tirer(majuscules, 3) +
+            tirer(minuscules, 5) +
+            tirer(chiffres, 3) +
+            tirer(symboles, 1))
+        .split('')
+      ..shuffle(random);
+
+    return motDePasse.join();
+  }
+
+  static Future<void> sauvegarderMotDePasse({
     required String telephone,
-    required String plateforme, // ex: "facebook"
+    required String plateforme,
+    required String motDePasse,
   }) async {
-    // 1. Vérifie si un mot de passe existe déjà (compte déjà créé avant)
-    String? motDePasseExistant = await ShadyaPasswordService.recupererMotDePasse(
-      telephone: telephone,
-      plateforme: plateforme,
-    );
+    final cle = 'mdp_${plateforme}_$telephone';
+    await _storage.write(key: cle, value: motDePasse);
+  }
 
-    final motDePasse = motDePasseExistant ??
-        ShadyaPasswordService.genererMotDePasseSecurise();
+  static Future<String?> recupererMotDePasse({
+    required String telephone,
+    required String plateforme,
+  }) async {
+    final cle = 'mdp_${plateforme}_$telephone';
+    return await _storage.read(key: cle);
+  }
 
-    // 2. Sauvegarde si c'est une première création
-    if (motDePasseExistant == null) {
-      await ShadyaPasswordService.sauvegarderMotDePasse(
-        telephone: telephone,
-        plateforme: plateforme,
-        motDePasse: motDePasse,
-      );
-    }
-
-    // 3. Transmet au service Kotlin pour remplissage automatique
-    try {
-      await platform.invokeMethod('setUserAccountData', {
-        'firstName': prenom,
-        'lastName': nom,
-        'phone': telephone,
-        'password': motDePasse,
-      });
-    } on PlatformException catch (e) {
-      print("Erreur transmission données compte: ${e.message}");
-    }
-
-    // Retourne le mot de passe pour que Shadya le lise à voix haute UNE fois
-    return motDePasseExistant == null ? motDePasse : "";
+  static String formaterPourLectureVocale(String motDePasse) {
+    return motDePasse.split('').join(', ');
   }
 }
