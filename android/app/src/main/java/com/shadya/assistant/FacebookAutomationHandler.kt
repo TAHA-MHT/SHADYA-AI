@@ -8,12 +8,54 @@ import android.view.accessibility.AccessibilityNodeInfo
 class FacebookAutomationHandler(private val service: AccessibilityService) {
 
     // Mis à jour par ShadyaAgentService juste avant chaque tentative,
-    // à partir de ce que l'utilisateur a dicté vocalement.
+    // à partir de ce que l'utilisateur a dicté vocalement (ou récupéré du stockage sécurisé).
     var userData: UserAccountData = UserAccountData()
+
+    // "signup" = créer un nouveau compte, "login" = se reconnecter à un compte existant
+    var mode: String = "signup"
 
     fun handleAccessibilityEvent(event: AccessibilityEvent) {
         val rootNode = service.rootInActiveWindow ?: return
 
+        if (mode == "login") {
+            handleLogin(rootNode)
+        } else {
+            handleSignup(rootNode)
+        }
+    }
+
+    private fun handleLogin(rootNode: AccessibilityNodeInfo) {
+        // Champ identifiant (numéro de téléphone ou email)
+        val loginFields = findFieldsByHint(rootNode, listOf("Numéro de mobile ou e-mail", "Mobile number or email", "Téléphone"))
+        val passwordFields = findFieldsByHint(rootNode, listOf("Mot de passe", "Password"))
+
+        if (loginFields.isNotEmpty() && passwordFields.isNotEmpty() && userData.phone.isNotEmpty() && userData.password.isNotEmpty()) {
+            fillTextField(loginFields.first(), userData.phone)
+            fillTextField(passwordFields.first(), userData.password)
+
+            val loginButtons = findNodesByText(rootNode, listOf("Connexion", "Log In", "Se connecter"))
+            if (loginButtons.isNotEmpty()) {
+                loginButtons.first().performAction(AccessibilityNodeInfo.ACTION_CLICK)
+            }
+            return
+        }
+
+        // Si un seul champ à la fois (certaines versions de Facebook séparent identifiant/mdp en 2 écrans)
+        if (loginFields.isNotEmpty() && userData.phone.isNotEmpty() && passwordFields.isEmpty()) {
+            fillTextField(loginFields.first(), userData.phone)
+            clickNextButton(rootNode)
+            return
+        }
+        if (passwordFields.isNotEmpty() && userData.password.isNotEmpty()) {
+            fillTextField(passwordFields.first(), userData.password)
+            val loginButtons = findNodesByText(rootNode, listOf("Connexion", "Log In", "Se connecter"))
+            if (loginButtons.isNotEmpty()) {
+                loginButtons.first().performAction(AccessibilityNodeInfo.ACTION_CLICK)
+            }
+        }
+    }
+
+    private fun handleSignup(rootNode: AccessibilityNodeInfo) {
         val createAccountButtons = findNodesByText(rootNode, listOf("Créer un compte", "Create new account", "S'inscrire"))
         if (createAccountButtons.isNotEmpty()) {
             createAccountButtons.first().performAction(AccessibilityNodeInfo.ACTION_CLICK)
