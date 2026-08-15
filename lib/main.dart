@@ -582,6 +582,115 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
       });
     }
   }
+  // Extrait prénom + nom depuis une phrase du type :
+  // "je m'appelle Fatimé Hassan" / "mon nom est Fatimé Hassan" / "moi c'est Fatimé Hassan"
+  Map<String, String> _extraireNomComplet(String texte) {
+    final texteMin = texte.toLowerCase();
+
+    final motsDeclencheurs = [
+      "je m'appelle",
+      "je m appelle",
+      "mon nom est",
+      "moi c'est",
+      "moi c est",
+      "je suis",
+    ];
+
+    String? segmentNom;
+    for (final declencheur in motsDeclencheurs) {
+      final index = texteMin.indexOf(declencheur);
+      if (index != -1) {
+        segmentNom = texte.substring(index + declencheur.length).trim();
+        break;
+      }
+    }
+
+    if (segmentNom == null || segmentNom.isEmpty) {
+      return {'prenom': '', 'nom': ''};
+    }
+
+    // Coupe au premier mot qui indique la suite de la phrase (numéro, mot de passe...)
+    final motsCoupure = ['mon numéro', 'mon numero', 'et mon', 'téléphone', 'telephone'];
+    for (final mot in motsCoupure) {
+      final idxCoupure = segmentNom.toLowerCase().indexOf(mot);
+      if (idxCoupure != -1) {
+        segmentNom = segmentNom.substring(0, idxCoupure).trim();
+      }
+    }
+
+    final morceaux = segmentNom
+        .split(RegExp(r'\s+'))
+        .where((m) => m.isNotEmpty)
+        .toList();
+
+    if (morceaux.isEmpty) return {'prenom': '', 'nom': ''};
+
+    String capitaliser(String mot) =>
+        mot.isEmpty ? mot : mot[0].toUpperCase() + mot.substring(1).toLowerCase();
+
+    final prenom = capitaliser(morceaux.first);
+    final nom = morceaux.length > 1
+        ? morceaux.sublist(1).map(capitaliser).join(' ')
+        : '';
+
+    return {'prenom': prenom, 'nom': nom};
+  }
+
+  // Extrait un numéro de téléphone tchadien depuis une phrase dictée.
+  // Gère les formats parlés avec ou sans espaces/tirets, avec ou sans indicatif +235.
+  String _extraireNumeroTelephone(String texte) {
+    // Cherche une séquence de 8 chiffres (format tchadien standard), avec espaces/tirets tolérés
+    final regex = RegExp(r'(\+?235)?[\s\-]?(\d[\s\-]?){8}');
+    final match = regex.firstMatch(texte);
+    if (match == null) return '';
+
+    var numeroBrut = match.group(0)!;
+    // Nettoie : retire espaces et tirets, garde uniquement chiffres et le +
+    var numeroNettoye = numeroBrut.replaceAll(RegExp(r'[\s\-]'), '');
+
+    // Ajoute l'indicatif si absent
+    if (!numeroNettoye.startsWith('+235')) {
+      if (numeroNettoye.startsWith('235')) {
+        numeroNettoye = '+$numeroNettoye';
+      } else {
+        numeroNettoye = '+235$numeroNettoye';
+      }
+    }
+
+    return numeroNettoye;
+    if (texteMinuscule.contains('facebook')) {
+      final infosNom = _extraireNomComplet(texte);
+      final telephone = _extraireNumeroTelephone(texte);
+
+      if (infosNom['prenom']!.isEmpty || telephone.isEmpty) {
+        await _speak("Pour créer ton compte Facebook, dis-moi ton nom complet et ton numéro de téléphone.");
+        return true;
+      }
+
+      await _speak("D'accord, je m'occupe de ton compte Facebook.");
+
+      final resultatCompte = await ShadyaAgentBridge.ouvrirCompteFacebook(
+        telephone: telephone,
+        prenom: infosNom['prenom']!,
+        nom: infosNom['nom']!,
+      );
+
+      if (resultatCompte != null) {
+        final lecture = ShadyaPasswordService.formaterPourLectureVocale(resultatCompte);
+        await _speak("J'ai créé ton compte Facebook pour ${infosNom['prenom']}. Ton mot de passe est : $lecture. Je m'en souviens pour toi.");
+      } else {
+        await _speak("Je te reconnecte à ton compte Facebook.");
+      }
+
+      final uriFacebook = Uri.parse('fb://');
+      if (await canLaunchUrl(uriFacebook)) {
+        await launchUrl(uriFacebook, mode: LaunchMode.externalApplication);
+      } else {
+        await launchUrl(Uri.parse('https://www.facebook.com'), mode: LaunchMode.externalApplication);
+      }
+      return true;
+    }
+  }
 
   Future<bool> _essayerOuvrirApplication(String texte) async {
     final texteMinuscule = texte.toLowerCase().trim();
