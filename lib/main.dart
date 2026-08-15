@@ -26,7 +26,7 @@ import 'l10n/app_localizations.dart';
 import 'services/device_registry.dart';
 import 'services/tuya_service.dart';
 import 'package:flutter/services.dart';
-import 'shadya_password_service.dart';
+import 'services/shadya_password_service.dart';
 
 class ShadyaAgentBridge {
   static const platform = MethodChannel('com.shadyaai.app/agent');
