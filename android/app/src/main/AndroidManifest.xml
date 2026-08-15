@@ -77,8 +77,7 @@
         </receiver>
 
     </application>
-
-    <queries>
+<queries>
         <!-- Application Téléphone (Nécessaire pour url_launcher avec tel:) -->
         <intent>
             <action android:name="android.intent.action.DIAL" />
@@ -90,11 +89,22 @@
         </intent>
 
         <!-- Package des applications à lancer -->
-        <package android:name="com.whatsapp" />
-        <package android:name="com.facebook.katana" />
         <package android:name="com.google.android.youtube" />
-        <package android:name="com.instagram.android" />
         <package android:name="com.android.chrome" />
+        <package android:name="cn.xender" />
+        <package android:name="com.google.android.apps.translate" />
+        <package android:name="com.android.vending" />
+        <package android:name="com.openai.chatgpt" />
+        <package android:name="com.alibaba.aliexpresshd" />
+        <package android:name="com.anthropic.claude" />
+        <package android:name="com.google.android.apps.bard" />
+        <package android:name="org.goldenquran.freesoft" />
+        <package android:name="com.xe.currency" />
+        <package android:name="com.desn.ffb.lihangzhixing" />
+        <package android:name="com.whatsapp" />
+        <package android:name="com.google.android.gm" />
+        <package android:name="com.facebook.katana" />
+        <package android:name="com.instagram.android" />
 
         <!-- Intention pour l'ouverture des liens et navigateurs -->
         <intent>
