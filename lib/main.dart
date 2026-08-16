@@ -174,6 +174,7 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
   String? _facebookEtape; // null, "attente_nom", "attente_telephone"
   String _facebookPrenomTemp = '';
   String _facebookNomTemp = '';
+  String _facebookTelephoneTemp = '';
 
   List<Contact> _contacts = [];
 
@@ -642,17 +643,68 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
     return {'prenom': prenom, 'nom': nom};
   }
 
+  // Convertit un mot-chiffre français ("zéro" à "neuf") en son caractère numérique.
+  // Retourne null si le mot n'est pas un chiffre reconnu.
+  String? _motVersChiffre(String mot) {
+    const chiffresMots = {
+      'zéro': '0', 'zero': '0',
+      'un': '1', 'une': '1',
+      'deux': '2',
+      'trois': '3',
+      'quatre': '4',
+      'cinq': '5',
+      'six': '6',
+      'sept': '7',
+      'huit': '8',
+      'neuf': '9',
+    };
+    return chiffresMots[mot.toLowerCase()];
+  }
+
   // Extrait un numéro de téléphone tchadien depuis une phrase dictée.
-  // Gère les formats parlés avec ou sans espaces/tirets, avec ou sans indicatif +235.
+  // Gère les formats parlés avec ou sans espaces/tirets, avec ou sans indicatif +235,
+  // ET les chiffres énoncés en toutes lettres ("six un quatre neuf...").
+  // Extrait tous les chiffres bruts d'un texte (numériques OU en toutes lettres),
+  // sans exiger un nombre précis — utilisé pour accumuler au fil de plusieurs essais.
+  String _extraireChiffresBruts(String texte) {
+    final digitsNum = RegExp(r'\d').allMatches(texte).map((m) => m.group(0)!).join();
+    if (digitsNum.isNotEmpty) return digitsNum;
+
+    final mots = texte.split(RegExp(r'\s+'));
+    final buffer = StringBuffer();
+    for (final mot in mots) {
+      final motNettoye = mot.replaceAll(RegExp(r'[^\wàâäéèêëïîôöùûüç]', unicode: true), '');
+      final chiffre = _motVersChiffre(motNettoye);
+      if (chiffre != null) buffer.write(chiffre);
+    }
+    return buffer.toString();
+  }
+
   String _extraireNumeroTelephone(String texte) {
-    // Cherche une séquence de 8 chiffres (format tchadien standard), avec espaces/tirets tolérés
+    // 1. Essaie d'abord de trouver des chiffres numériques classiques (ex: "66 12 34 56")
     final regex = RegExp(r'(\+?235)?[\s\-]?(\d[\s\-]?){8}');
     final match = regex.firstMatch(texte);
-    if (match == null) return '';
 
-    var numeroBrut = match.group(0)!;
-    // Nettoie : retire espaces et tirets, garde uniquement chiffres et le +
-    var numeroNettoye = numeroBrut.replaceAll(RegExp(r'[\s\-]'), '');
+    String numeroNettoye;
+
+    if (match != null) {
+      var numeroBrut = match.group(0)!;
+      numeroNettoye = numeroBrut.replaceAll(RegExp(r'[\s\-]'), '');
+    } else {
+      // 2. Sinon, essaie de convertir des chiffres énoncés en toutes lettres
+      // (ex: Vosk transcrit souvent "six un quatre neuf huit..." au lieu de "614 98...")
+      final mots = texte.split(RegExp(r'\s+'));
+      final chiffresTrouves = <String>[];
+      for (final mot in mots) {
+        final motNettoye = mot.replaceAll(RegExp(r'[^\wàâäéèêëïîôöùûüç]', unicode: true), '');
+        final chiffre = _motVersChiffre(motNettoye);
+        if (chiffre != null) {
+          chiffresTrouves.add(chiffre);
+        }
+      }
+      if (chiffresTrouves.length < 8) return '';
+      numeroNettoye = chiffresTrouves.join();
+    }
 
     // Ajoute l'indicatif si absent
     if (!numeroNettoye.startsWith('+235')) {
@@ -679,7 +731,9 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
           : (motsTexte.isNotEmpty ? motsTexte.first : '');
 
       if (prenom.isEmpty) {
-        await _speak("Je n'ai pas bien entendu ton nom. Peux-tu le répéter ?");
+        const msg = "Je n'ai pas bien entendu ton nom. Peux-tu le répéter ?";
+        setState(() => _recognizedText = "Shadya : $msg");
+        await _speak(msg);
         return true;
       }
 
@@ -687,20 +741,30 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
       _facebookNomTemp = infosNom['nom']!;
       _facebookEtape = 'attente_telephone';
 
-      await _speak("D'accord $_facebookPrenomTemp. Maintenant, dis-moi ton numéro de téléphone, chiffre par chiffre.");
+      final msg = "D'accord $_facebookPrenomTemp. Maintenant, dis-moi ton numéro de téléphone, chiffre par chiffre.";
+      setState(() => _recognizedText = "Shadya : $msg");
+      await _speak(msg);
       return true;
     }
 
     if (_facebookEtape == 'attente_telephone') {
-      final telephone = _extraireNumeroTelephone(texte);
+      final chiffres = _extraireChiffresBruts(texte);
+      _facebookTelephoneTemp += chiffres;
 
-      if (telephone.isEmpty) {
-        await _speak("Je n'ai pas bien compris le numéro. Peux-tu le redire, chiffre par chiffre ?");
+      if (_facebookTelephoneTemp.length < 8) {
+        final manquant = 8 - _facebookTelephoneTemp.length;
+        final msg = "J'ai reçu ${_facebookTelephoneTemp.length} chiffre${_facebookTelephoneTemp.length > 1 ? 's' : ''}. Continue, il en manque encore $manquant.";
+        setState(() => _recognizedText = "Shadya : $msg");
+        await _speak(msg);
         return true;
       }
 
+      final numeroBrut = _facebookTelephoneTemp.substring(0, 8);
+      final telephone = numeroBrut.startsWith('235') ? '+$numeroBrut' : '+235$numeroBrut';
+      _facebookTelephoneTemp = '';
       _facebookEtape = null;
 
+      setState(() => _recognizedText = "Shadya : D'accord, je m'occupe de ton compte Facebook.");
       await _speak("D'accord, je m'occupe de ton compte Facebook.");
 
       try {
@@ -712,13 +776,19 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
 
         if (resultatCompte != null) {
           final lecture = ShadyaPasswordService.formaterPourLectureVocale(resultatCompte);
-          await _speak("J'ai créé ton compte Facebook pour $_facebookPrenomTemp. Ton mot de passe est : $lecture. Je m'en souviens pour toi.");
+          final msg = "J'ai créé ton compte Facebook pour $_facebookPrenomTemp. Ton mot de passe est : $lecture. Je m'en souviens pour toi.";
+          setState(() => _recognizedText = "Shadya : $msg");
+          await _speak(msg);
         } else {
-          await _speak("Je te reconnecte à ton compte Facebook.");
+          const msg = "Je te reconnecte à ton compte Facebook.";
+          setState(() => _recognizedText = "Shadya : $msg");
+          await _speak(msg);
         }
       } catch (e, stack) {
         await _ecrireCrashLog('Erreur ouvrirCompteFacebook: $e\n$stack');
-        await _speak("Il y a eu un problème technique avec Facebook.");
+        const msg = "Il y a eu un problème technique avec Facebook.";
+        setState(() => _recognizedText = "Shadya : $msg");
+        await _speak(msg);
       }
 
       try {
@@ -749,6 +819,7 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
     // Cas spécial Facebook : démarre le flux séquentiel (nom, puis téléphone)
     if (texteMinuscule.contains('facebook')) {
       _facebookEtape = 'attente_nom';
+      _facebookTelephoneTemp = '';
       await _speak("D'accord, je vais créer ou retrouver ton compte Facebook. Dis-moi ton prénom et ton nom.");
       return true;
     }
