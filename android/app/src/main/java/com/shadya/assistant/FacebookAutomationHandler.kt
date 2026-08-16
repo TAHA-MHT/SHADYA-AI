@@ -56,7 +56,7 @@ class FacebookAutomationHandler(private val service: AccessibilityService) {
     }
 
     private fun handleSignup(rootNode: AccessibilityNodeInfo) {
-        val createAccountButtons = findNodesByText(rootNode, listOf("Créer un compte", "Create new account", "S'inscrire"))
+        val createAccountButtons = findNodesByText(rootNode, listOf("Créer un compte", "Create new account", "S'inscrire", "Get started", "GET STARTED"))
         if (createAccountButtons.isNotEmpty()) {
             createAccountButtons.first().performAction(AccessibilityNodeInfo.ACTION_CLICK)
             return
