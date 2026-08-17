@@ -25,22 +25,23 @@ class FacebookAutomationHandler(private val service: AccessibilityService) {
     }
 
     private fun handleLogin(rootNode: AccessibilityNodeInfo) {
-        // Champ identifiant (numéro de téléphone ou email)
-        val loginFields = findFieldsByHint(rootNode, listOf("Numéro de mobile ou e-mail", "Mobile number or email", "Téléphone"))
+        val loginFields = findFieldsByHint(rootNode, listOf(
+            "Numéro de mobile ou e-mail", "Mobile number or email", "Mobile number or email address",
+            "Téléphone", "Phone"
+        ))
         val passwordFields = findFieldsByHint(rootNode, listOf("Mot de passe", "Password"))
 
         if (loginFields.isNotEmpty() && passwordFields.isNotEmpty() && userData.phone.isNotEmpty() && userData.password.isNotEmpty()) {
             fillTextField(loginFields.first(), userData.phone)
             fillTextField(passwordFields.first(), userData.password)
 
-            val loginButtons = findNodesByText(rootNode, listOf("Connexion", "Log In", "Se connecter"))
+            val loginButtons = findNodesByText(rootNode, listOf("Connexion", "Log In", "Se connecter", "Log in"))
             if (loginButtons.isNotEmpty()) {
                 loginButtons.first().performAction(AccessibilityNodeInfo.ACTION_CLICK)
             }
             return
         }
 
-        // Si un seul champ à la fois (certaines versions de Facebook séparent identifiant/mdp en 2 écrans)
         if (loginFields.isNotEmpty() && userData.phone.isNotEmpty() && passwordFields.isEmpty()) {
             fillTextField(loginFields.first(), userData.phone)
             clickNextButton(rootNode)
@@ -48,7 +49,7 @@ class FacebookAutomationHandler(private val service: AccessibilityService) {
         }
         if (passwordFields.isNotEmpty() && userData.password.isNotEmpty()) {
             fillTextField(passwordFields.first(), userData.password)
-            val loginButtons = findNodesByText(rootNode, listOf("Connexion", "Log In", "Se connecter"))
+            val loginButtons = findNodesByText(rootNode, listOf("Connexion", "Log In", "Se connecter", "Log in"))
             if (loginButtons.isNotEmpty()) {
                 loginButtons.first().performAction(AccessibilityNodeInfo.ACTION_CLICK)
             }
@@ -56,14 +57,18 @@ class FacebookAutomationHandler(private val service: AccessibilityService) {
     }
 
     private fun handleSignup(rootNode: AccessibilityNodeInfo) {
-        val createAccountButtons = findNodesByText(rootNode, listOf("Créer un compte", "Create new account", "S'inscrire", "Get started", "GET STARTED"))
+        // Écran d'accueil "Join Facebook" / "Rejoindre Facebook"
+        val createAccountButtons = findNodesByText(rootNode, listOf(
+            "Créer un compte", "Create new account", "S'inscrire",
+            "Get started", "GET STARTED", "Get Started"
+        ))
         if (createAccountButtons.isNotEmpty()) {
             createAccountButtons.first().performAction(AccessibilityNodeInfo.ACTION_CLICK)
             return
         }
 
         val firstNameFields = findFieldsByHint(rootNode, listOf("Prénom", "First name"))
-        val lastNameFields = findFieldsByHint(rootNode, listOf("Nom", "Last name", "Nom de famille"))
+        val lastNameFields = findFieldsByHint(rootNode, listOf("Nom", "Last name", "Nom de famille", "Surname"))
 
         if (firstNameFields.isNotEmpty() && lastNameFields.isNotEmpty() && userData.firstName.isNotEmpty()) {
             fillTextField(firstNameFields.first(), userData.firstName)
@@ -72,14 +77,16 @@ class FacebookAutomationHandler(private val service: AccessibilityService) {
             return
         }
 
-        val phoneFields = findFieldsByHint(rootNode, listOf("Numéro de mobile", "Mobile number", "Téléphone"))
+        val phoneFields = findFieldsByHint(rootNode, listOf(
+            "Numéro de mobile", "Mobile number", "Téléphone", "Phone number"
+        ))
         if (phoneFields.isNotEmpty() && userData.phone.isNotEmpty()) {
             fillTextField(phoneFields.first(), userData.phone)
             clickNextButton(rootNode)
             return
         }
 
-        val passwordFields = findFieldsByHint(rootNode, listOf("Mot de passe", "Password"))
+        val passwordFields = findFieldsByHint(rootNode, listOf("Mot de passe", "Password", "New password"))
         if (passwordFields.isNotEmpty() && userData.password.isNotEmpty()) {
             fillTextField(passwordFields.first(), userData.password)
             clickNextButton(rootNode)
@@ -94,7 +101,9 @@ class FacebookAutomationHandler(private val service: AccessibilityService) {
     }
 
     private fun clickNextButton(rootNode: AccessibilityNodeInfo) {
-        val nextButtons = findNodesByText(rootNode, listOf("Suivant", "Next", "S'inscrire", "Continue"))
+        val nextButtons = findNodesByText(rootNode, listOf(
+            "Suivant", "Next", "S'inscrire", "Continue", "Sign up", "Sign Up"
+        ))
         if (nextButtons.isNotEmpty()) {
             nextButtons.first().performAction(AccessibilityNodeInfo.ACTION_CLICK)
         }
