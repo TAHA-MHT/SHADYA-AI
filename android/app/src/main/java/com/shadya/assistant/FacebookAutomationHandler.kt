@@ -62,6 +62,14 @@ class FacebookAutomationHandler(private val service: AccessibilityService) {
             return
         }
 
+        // Écran "What's your date of birth?" — valide avec la date affichée par défaut
+        val setDateButtons = findNodesByText(rootNode, listOf("SET"))
+        val cancelButtons = findNodesByText(rootNode, listOf("CANCEL"))
+        if (setDateButtons.isNotEmpty() && cancelButtons.isNotEmpty()) {
+            performClick(setDateButtons.first())
+            return
+        }
+
         val firstNameFields = findFieldsByHint(rootNode, listOf("Prénom", "First name"))
         val lastNameFields = findFieldsByHint(rootNode, listOf("Nom", "Last name", "Nom de famille", "Surname"))
 
@@ -87,6 +95,11 @@ class FacebookAutomationHandler(private val service: AccessibilityService) {
             clickNextButton(rootNode)
             return
         }
+
+        // Fallback : si aucun champ connu ne correspond, tente quand même
+        // de cliquer sur un bouton "suivant" générique (utile pour les écrans
+        // non explicitement gérés, comme la validation de la date de naissance).
+        clickNextButton(rootNode)
     }
 
     // Clique sur le nœud, ou remonte vers le premier parent cliquable si le nœud
