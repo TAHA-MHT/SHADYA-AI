@@ -614,7 +614,7 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
 
     final motsCoupure = ['mon numéro', 'mon numero', 'et mon', 'téléphone', 'telephone'];
     for (final mot in motsCoupure) {
-      final idxCoupure = segmentNom.toLowerCase().indexOf(mot);
+      final idxCoupure = segmentNom!.toLowerCase().indexOf(mot);
       if (idxCoupure != -1) {
         segmentNom = segmentNom!.substring(0, idxCoupure).trim();
       }
