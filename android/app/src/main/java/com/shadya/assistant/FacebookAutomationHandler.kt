@@ -61,6 +61,14 @@ class FacebookAutomationHandler(private val service: AccessibilityService) {
             performClick(createAccountButtons.first())
             return
         }
+        
+        // Popup système "Choose an email address to auto-fill your details"
+        val skipButtons = findNodesByText(rootNode, listOf("Skip", "Ignorer"))
+        val okButtons = findNodesByText(rootNode, listOf("OK"))
+        if (skipButtons.isNotEmpty() && okButtons.isNotEmpty()) {
+            performClick(skipButtons.first())
+            return
+        }
 
         // Écran "What's your date of birth?" — valide avec la date affichée par défaut
         val setDateButtons = findNodesByText(rootNode, listOf("SET"))
