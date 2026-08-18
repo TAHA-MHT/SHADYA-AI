@@ -7,11 +7,7 @@ import android.view.accessibility.AccessibilityNodeInfo
 
 class FacebookAutomationHandler(private val service: AccessibilityService) {
 
-    // Mis à jour par ShadyaAgentService juste avant chaque tentative,
-    // à partir de ce que l'utilisateur a dicté vocalement (ou récupéré du stockage sécurisé).
     var userData: UserAccountData = UserAccountData()
-
-    // "signup" = créer un nouveau compte, "login" = se reconnecter à un compte existant
     var mode: String = "signup"
 
     fun handleAccessibilityEvent(event: AccessibilityEvent) {
@@ -37,7 +33,7 @@ class FacebookAutomationHandler(private val service: AccessibilityService) {
 
             val loginButtons = findNodesByText(rootNode, listOf("Connexion", "Log In", "Se connecter", "Log in"))
             if (loginButtons.isNotEmpty()) {
-                loginButtons.first().performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                performClick(loginButtons.first())
             }
             return
         }
@@ -51,19 +47,18 @@ class FacebookAutomationHandler(private val service: AccessibilityService) {
             fillTextField(passwordFields.first(), userData.password)
             val loginButtons = findNodesByText(rootNode, listOf("Connexion", "Log In", "Se connecter", "Log in"))
             if (loginButtons.isNotEmpty()) {
-                loginButtons.first().performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                performClick(loginButtons.first())
             }
         }
     }
 
     private fun handleSignup(rootNode: AccessibilityNodeInfo) {
-        // Écran d'accueil "Join Facebook" / "Rejoindre Facebook"
         val createAccountButtons = findNodesByText(rootNode, listOf(
             "Créer un compte", "Create new account", "S'inscrire",
             "Get started", "GET STARTED", "Get Started"
         ))
         if (createAccountButtons.isNotEmpty()) {
-            createAccountButtons.first().performAction(AccessibilityNodeInfo.ACTION_CLICK)
+            performClick(createAccountButtons.first())
             return
         }
 
@@ -94,6 +89,19 @@ class FacebookAutomationHandler(private val service: AccessibilityService) {
         }
     }
 
+    // Clique sur le nœud, ou remonte vers le premier parent cliquable si le nœud
+    // lui-même ne l'est pas (cas fréquent : le texte est dans un enfant non cliquable).
+    private fun performClick(node: AccessibilityNodeInfo) {
+        var courant: AccessibilityNodeInfo? = node
+        while (courant != null) {
+            if (courant.isClickable) {
+                courant.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                return
+            }
+            courant = courant.parent
+        }
+    }
+
     private fun fillTextField(node: AccessibilityNodeInfo, text: String) {
         val arguments = Bundle()
         arguments.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
@@ -105,7 +113,7 @@ class FacebookAutomationHandler(private val service: AccessibilityService) {
             "Suivant", "Next", "S'inscrire", "Continue", "Sign up", "Sign Up"
         ))
         if (nextButtons.isNotEmpty()) {
-            nextButtons.first().performAction(AccessibilityNodeInfo.ACTION_CLICK)
+            performClick(nextButtons.first())
         }
     }
 
