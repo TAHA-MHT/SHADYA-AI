@@ -44,6 +44,14 @@ class ShadyaAgentService : AccessibilityService() {
                     whatsAppAutomation.userData = pendingUserData
                     whatsAppAutomation.handleAccessibilityEvent(it)
                 }
+                "android" -> {
+                    // Boîtes de dialogue système (ex: sélecteur de date natif)
+                    // affichées par-dessus Facebook — on les traite comme faisant
+                    // partie du flux Facebook en cours.
+                    facebookAutomation.userData = pendingUserData
+                    facebookAutomation.mode = pendingMode
+                    facebookAutomation.handleAccessibilityEvent(it)
+                }
             }
         }
     }
