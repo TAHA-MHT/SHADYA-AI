@@ -31,6 +31,14 @@ class MainActivity : FlutterActivity() {
                     ShadyaAgentService.pendingMode = mode
                     result.success(true)
                 }
+                "activateFlow" -> {
+                    ShadyaAgentService.activateFlow()
+                    result.success(true)
+                }
+                "deactivateFlow" -> {
+                    ShadyaAgentService.deactivateFlow()
+                    result.success(true)
+                }
                 else -> result.notImplemented()
             }
         }
