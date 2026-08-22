@@ -70,6 +70,22 @@ class ShadyaAgentBridge {
       return nouveauMotDePasse;
     }
   }
+
+  // Active la surveillance des dialogues système (ex: sélecteur de date)
+  // côté service d'accessibilité, uniquement pendant la durée du flux Facebook.
+  static Future<void> activerFluxAndroid() async {
+    try {
+      await platform.invokeMethod('activateFlow');
+    } catch (_) {}
+  }
+
+  // Désactive cette surveillance dès que le flux est terminé, pour éviter
+  // que le service ne continue à agir sur des dialogues système sans rapport.
+  static Future<void> desactiverFluxAndroid() async {
+    try {
+      await platform.invokeMethod('deactivateFlow');
+    } catch (_) {}
+  }
 }
 
 Future<void> _ecrireCrashLog(String contenu) async {
@@ -717,6 +733,7 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
       _facebookPrenomTemp = '';
       _facebookNomTemp = '';
       _facebookTelephoneTemp = '';
+      await ShadyaAgentBridge.desactiverFluxAndroid();
       const msg = "D'accord, j'annule. Dis-moi si tu veux recommencer.";
       setState(() => _recognizedText = "Shadya : $msg");
       await _speak(msg);
@@ -828,6 +845,11 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
         await _ecrireCrashLog('Erreur ouverture Facebook: $e\n$stack');
       }
 
+      // Le flux est terminé : on désactive la surveillance des dialogues
+      // système côté service d'accessibilité, pour éviter qu'il continue
+      // à agir sur des événements sans rapport avec Facebook.
+      await ShadyaAgentBridge.desactiverFluxAndroid();
+
       _facebookPrenomTemp = '';
       _facebookNomTemp = '';
       return true;
@@ -839,13 +861,17 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
   Future<bool> _essayerOuvrirApplication(String texte) async {
     final texteMinuscule = texte.toLowerCase().trim();
 
-    final estCommandeOuverture = RegExp(r'\b(ouvre|lancer|lance|démarre|demarre)\b').hasMatch(texteMinuscule);
+    final estCommandeOuverture = RegExp(r'\b(ouvre|pauvre|lancer|lance|démarre|demarre)\b').hasMatch(texteMinuscule);
     if (!estCommandeOuverture) return false;
 
     // Cas spécial Facebook : démarre le flux séquentiel (nom, puis téléphone)
     if (texteMinuscule.contains('facebook')) {
       _facebookEtape = 'attente_nom';
       _facebookTelephoneTemp = '';
+      // Active la surveillance des dialogues système AVANT d'entrer dans le
+      // flux : nécessaire pour que le sélecteur de date de naissance (affiché
+      // par le système, pas par Facebook lui-même) soit pris en charge.
+      await ShadyaAgentBridge.activerFluxAndroid();
       await _speak("D'accord, je vais créer ou retrouver ton compte Facebook. Dis-moi ton prénom et ton nom.");
       return true;
     }
