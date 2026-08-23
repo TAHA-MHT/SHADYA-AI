@@ -845,11 +845,12 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
         await _ecrireCrashLog('Erreur ouverture Facebook: $e\n$stack');
       }
 
-      // Le flux est terminé : on désactive la surveillance des dialogues
-      // système côté service d'accessibilité, pour éviter qu'il continue
-      // à agir sur des événements sans rapport avec Facebook.
-      await ShadyaAgentBridge.desactiverFluxAndroid();
-
+      // Le flux reste actif encore quelques minutes après l'ouverture de
+      // Facebook (coupure automatique de sécurité côté service natif),
+      // le temps que l'utilisateur termine réellement l'inscription —
+      // désactiver immédiatement ici empêcherait la gestion du sélecteur
+      // de date et des autres écrans système qui apparaissent après coup.
+      
       _facebookPrenomTemp = '';
       _facebookNomTemp = '';
       return true;
