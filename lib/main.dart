@@ -834,7 +834,7 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
     if (_facebookEtape == 'attente_confirmation_nom') {
       if (_estConfirmationPositive(texte)) {
         _facebookEtape = 'attente_telephone';
-        final msg = "D'accord $_facebookPrenomTemp. Maintenant, dis-moi ton numéro de téléphone, chiffre par chiffre.";
+        final msg = "D'accord $_facebookPrenomTemp. Maintenant, dis-moi ton numéro de téléphone, deux chiffres à la fois.";
         setState(() => _recognizedText = "Shadya : $msg");
         await _speak(msg);
         return true;
@@ -862,7 +862,7 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
 
       if (_facebookTelephoneTemp.length < 8) {
         final manquant = 8 - _facebookTelephoneTemp.length;
-        final msg = "J'ai reçu ${_facebookTelephoneTemp.length} chiffre${_facebookTelephoneTemp.length > 1 ? 's' : ''}. Continue, il en manque encore $manquant.";
+        final msg = "J'ai reçu ${_facebookTelephoneTemp.length} chiffre${_facebookTelephoneTemp.length > 1 ? 's' : ''}. Continue, deux chiffres à la fois, il en manque encore $manquant.";
         setState(() => _recognizedText = "Shadya : $msg");
         await _speak(msg);
         return true;
