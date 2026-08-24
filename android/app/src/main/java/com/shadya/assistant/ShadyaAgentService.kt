@@ -58,9 +58,16 @@ class ShadyaAgentService : AccessibilityService() {
 
             when (packageName) {
                 "com.facebook.katana", "com.facebook.lite" -> {
-                    facebookAutomation.userData = pendingUserData
-                    facebookAutomation.mode = pendingMode
-                    facebookAutomation.handleAccessibilityEvent(it)
+                    // Même garde-fou que pour les dialogues système "android" :
+                    // sans ce contrôle, tout événement d'accessibilité émis par
+                    // Facebook (réouverture manuelle, notification, relance par
+                    // le système) relance l'automatisation avec les données de
+                    // la dernière tentative, même après la fin du flux Shadya.
+                    if (flowActive) {
+                        facebookAutomation.userData = pendingUserData
+                        facebookAutomation.mode = pendingMode
+                        facebookAutomation.handleAccessibilityEvent(it)
+                    }
                 }
                 "com.whatsapp", "com.whatsapp.w4b" -> {
                     whatsAppAutomation.userData = pendingUserData
