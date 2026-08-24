@@ -183,7 +183,8 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
   bool _showDebugPanel = false;
 
   // État du flux de création de compte Facebook en plusieurs étapes
-  String? _facebookEtape; // null, "attente_nom", "attente_nom_famille", "attente_telephone"
+  // null, "attente_nom", "attente_nom_famille", "attente_confirmation_nom", "attente_telephone"
+  String? _facebookEtape;
   String _facebookPrenomTemp = '';
   String _facebookNomTemp = '';
   String _facebookTelephoneTemp = '';
@@ -721,6 +722,46 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
     return numeroNettoye;
   }
 
+  // Détecte une confirmation positive ("oui", "correct", "exact"...).
+  bool _estConfirmationPositive(String texte) {
+    final t = texte.toLowerCase();
+    const motsPositifs = [
+      'oui',
+      "c'est ça",
+      'c est ça',
+      "c'est bon",
+      'c est bon',
+      'correct',
+      'exact',
+      'exactement',
+      'voilà',
+      'voila',
+      "c'est correct",
+      'ok',
+      "d'accord",
+      'daccord',
+    ];
+    return motsPositifs.any((mot) => t.contains(mot));
+  }
+
+  // Détecte une confirmation négative ("non", "faux"...).
+  // Ne réutilise volontairement pas "stop"/"annule"/"recommence", qui sont
+  // déjà gérés en amont comme mots d'annulation globale du flux.
+  bool _estConfirmationNegative(String texte) {
+    final t = texte.toLowerCase();
+    const motsNegatifs = [
+      'non',
+      'faux',
+      'incorrect',
+      'pas ça',
+      'pas ca',
+      'mauvais',
+      'c est faux',
+      "c'est faux",
+    ];
+    return motsNegatifs.any((mot) => t.contains(mot));
+  }
+
   // Gère le flux Facebook en plusieurs étapes si une étape est en attente.
   // Retourne true si le texte a été traité dans le cadre de ce flux.
   Future<bool> _gererFluxFacebook(String texte) async {
@@ -765,8 +806,8 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
         return true;
       }
 
-      _facebookEtape = 'attente_telephone';
-      final msg = "D'accord $_facebookPrenomTemp. Maintenant, dis-moi ton numéro de téléphone, chiffre par chiffre.";
+      _facebookEtape = 'attente_confirmation_nom';
+      final msg = "J'ai compris $_facebookPrenomTemp $_facebookNomTemp. C'est correct ? Dis oui ou non.";
       setState(() => _recognizedText = "Shadya : $msg");
       await _speak(msg);
       return true;
@@ -782,9 +823,34 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
       }
 
       _facebookNomTemp = motsTexte.map((m) => m.isEmpty ? m : m[0].toUpperCase() + m.substring(1).toLowerCase()).join(' ');
-      _facebookEtape = 'attente_telephone';
+      _facebookEtape = 'attente_confirmation_nom';
 
-      final msg = "D'accord $_facebookPrenomTemp $_facebookNomTemp. Maintenant, dis-moi ton numéro de téléphone, chiffre par chiffre.";
+      final msg = "J'ai compris $_facebookPrenomTemp $_facebookNomTemp. C'est correct ? Dis oui ou non.";
+      setState(() => _recognizedText = "Shadya : $msg");
+      await _speak(msg);
+      return true;
+    }
+
+    if (_facebookEtape == 'attente_confirmation_nom') {
+      if (_estConfirmationPositive(texte)) {
+        _facebookEtape = 'attente_telephone';
+        final msg = "D'accord $_facebookPrenomTemp. Maintenant, dis-moi ton numéro de téléphone, chiffre par chiffre.";
+        setState(() => _recognizedText = "Shadya : $msg");
+        await _speak(msg);
+        return true;
+      }
+
+      if (_estConfirmationNegative(texte)) {
+        _facebookPrenomTemp = '';
+        _facebookNomTemp = '';
+        _facebookEtape = 'attente_nom';
+        const msg = "D'accord, on reprend. Dis-moi ton prénom et ton nom.";
+        setState(() => _recognizedText = "Shadya : $msg");
+        await _speak(msg);
+        return true;
+      }
+
+      const msg = "Je n'ai pas compris. Dis simplement oui si le nom est correct, ou non si je dois le reprendre.";
       setState(() => _recognizedText = "Shadya : $msg");
       await _speak(msg);
       return true;
