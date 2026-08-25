@@ -183,7 +183,8 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
   bool _showDebugPanel = false;
 
   // État du flux de création de compte Facebook en plusieurs étapes
-  // null, "attente_nom", "attente_nom_famille", "attente_confirmation_nom", "attente_telephone"
+  // null, "attente_nom", "attente_nom_famille", "attente_confirmation_nom",
+  // "attente_telephone", "attente_confirmation_telephone"
   String? _facebookEtape;
   String _facebookPrenomTemp = '';
   String _facebookNomTemp = '';
@@ -762,6 +763,45 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
     return motsNegatifs.any((mot) => t.contains(mot));
   }
 
+  // Détecte que l'utilisateur veut corriger le dernier chiffre dicté.
+  // Volontairement distinct du mot "annule" (annulation globale du flux,
+  // déjà interceptée plus haut) pour ne pas tout faire recommencer à zéro
+  // pour une simple faute de frappe vocale.
+  bool _estDemandeEffacement(String texte) {
+    final t = texte.toLowerCase();
+    const motsEffacement = [
+      'efface',
+      'effacer',
+      'erreur',
+      'corrige',
+      'corriger',
+      'supprime',
+      'supprimer',
+    ];
+    return motsEffacement.any((mot) => t.contains(mot));
+  }
+
+  // Détecte que l'utilisateur signale la fin de la dictée du numéro de
+  // téléphone. Volontairement distinct des mots d'annulation globaux
+  // ("stop", "annule", "recommence"), déjà interceptés plus haut.
+  bool _estFinNumero(String texte) {
+    final t = texte.toLowerCase();
+    const motsFin = [
+      'terminé',
+      'termine',
+      'fini',
+      "c'est tout",
+      'c est tout',
+      "c'est fini",
+      'c est fini',
+      "c'est bon",
+      'c est bon',
+      'voilà',
+      'voila',
+    ];
+    return motsFin.any((mot) => t.contains(mot));
+  }
+
   // Gère le flux Facebook en plusieurs étapes si une étape est en attente.
   // Retourne true si le texte a été traité dans le cadre de ce flux.
   Future<bool> _gererFluxFacebook(String texte) async {
@@ -775,7 +815,7 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
       _facebookNomTemp = '';
       _facebookTelephoneTemp = '';
       await ShadyaAgentBridge.desactiverFluxAndroid();
-      const msg = "D'accord, j'annule. Dis-moi si tu veux recommencer.";
+      const msg = "D'accord, j'annule.";
       setState(() => _recognizedText = "Shadya : $msg");
       await _speak(msg);
       return true;
@@ -789,7 +829,7 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
           : (motsTexte.isNotEmpty ? motsTexte.first : '');
 
       if (prenom.isEmpty) {
-        const msg = "Je n'ai pas bien entendu ton nom. Peux-tu le répéter ?";
+        const msg = "Je n'ai pas entendu. Répète ton nom.";
         setState(() => _recognizedText = "Shadya : $msg");
         await _speak(msg);
         return true;
@@ -800,14 +840,14 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
 
       if (_facebookNomTemp.isEmpty) {
         _facebookEtape = 'attente_nom_famille';
-        final msg = "Merci $_facebookPrenomTemp. Il me faut aussi ton nom de famille.";
+        final msg = "Merci $_facebookPrenomTemp. Dis ton nom de famille.";
         setState(() => _recognizedText = "Shadya : $msg");
         await _speak(msg);
         return true;
       }
 
       _facebookEtape = 'attente_confirmation_nom';
-      final msg = "J'ai compris $_facebookPrenomTemp $_facebookNomTemp. C'est correct ? Dis oui ou non.";
+      final msg = "$_facebookPrenomTemp $_facebookNomTemp, c'est correct ?";
       setState(() => _recognizedText = "Shadya : $msg");
       await _speak(msg);
       return true;
@@ -816,7 +856,7 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
     if (_facebookEtape == 'attente_nom_famille') {
       final motsTexte = texte.trim().split(RegExp(r'\s+')).where((m) => m.isNotEmpty).toList();
       if (motsTexte.isEmpty) {
-        const msg = "Je n'ai pas entendu ton nom de famille. Peux-tu le répéter ?";
+        const msg = "Je n'ai pas entendu. Répète ton nom de famille.";
         setState(() => _recognizedText = "Shadya : $msg");
         await _speak(msg);
         return true;
@@ -825,7 +865,7 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
       _facebookNomTemp = motsTexte.map((m) => m.isEmpty ? m : m[0].toUpperCase() + m.substring(1).toLowerCase()).join(' ');
       _facebookEtape = 'attente_confirmation_nom';
 
-      final msg = "J'ai compris $_facebookPrenomTemp $_facebookNomTemp. C'est correct ? Dis oui ou non.";
+      final msg = "$_facebookPrenomTemp $_facebookNomTemp, c'est correct ?";
       setState(() => _recognizedText = "Shadya : $msg");
       await _speak(msg);
       return true;
@@ -834,7 +874,7 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
     if (_facebookEtape == 'attente_confirmation_nom') {
       if (_estConfirmationPositive(texte)) {
         _facebookEtape = 'attente_telephone';
-        final msg = "D'accord $_facebookPrenomTemp. Maintenant, dis-moi ton numéro de téléphone, deux chiffres à la fois.";
+        final msg = "Dis ton numéro de téléphone.";
         setState(() => _recognizedText = "Shadya : $msg");
         await _speak(msg);
         return true;
@@ -844,85 +884,144 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
         _facebookPrenomTemp = '';
         _facebookNomTemp = '';
         _facebookEtape = 'attente_nom';
-        const msg = "D'accord, on reprend. Dis-moi ton prénom et ton nom.";
+        const msg = "D'accord. Dis ton prénom et ton nom.";
         setState(() => _recognizedText = "Shadya : $msg");
         await _speak(msg);
         return true;
       }
 
-      const msg = "Je n'ai pas compris. Dis simplement oui si le nom est correct, ou non si je dois le reprendre.";
+      const msg = "Dis oui ou non.";
       setState(() => _recognizedText = "Shadya : $msg");
       await _speak(msg);
       return true;
     }
 
     if (_facebookEtape == 'attente_telephone') {
-      final chiffres = _extraireChiffresBruts(texte);
-      _facebookTelephoneTemp += chiffres;
-
-      if (_facebookTelephoneTemp.length < 8) {
-        final manquant = 8 - _facebookTelephoneTemp.length;
-        final msg = "J'ai reçu ${_facebookTelephoneTemp.length} chiffre${_facebookTelephoneTemp.length > 1 ? 's' : ''}. Continue, deux chiffres à la fois, il en manque encore $manquant.";
+      if (_estDemandeEffacement(texte)) {
+        if (_facebookTelephoneTemp.isNotEmpty) {
+          _facebookTelephoneTemp = _facebookTelephoneTemp.substring(0, _facebookTelephoneTemp.length - 1);
+        }
+        final msg = _facebookTelephoneTemp.isEmpty
+            ? "Effacé. Continue."
+            : "Effacé. $_facebookTelephoneTemp. Continue.";
         setState(() => _recognizedText = "Shadya : $msg");
         await _speak(msg);
         return true;
       }
 
-      final numeroBrut = _facebookTelephoneTemp.substring(0, 8);
-      final telephone = numeroBrut.startsWith('235') ? '+$numeroBrut' : '+235$numeroBrut';
-      _facebookTelephoneTemp = '';
-      _facebookEtape = null;
+      final chiffres = _extraireChiffresBruts(texte);
+      _facebookTelephoneTemp += chiffres;
 
-      setState(() => _recognizedText = "Shadya : D'accord, je m'occupe de ton compte Facebook.");
-      await _speak("D'accord, je m'occupe de ton compte Facebook.");
+      // Limite de sécurité : le format international E.164 autorise au
+      // maximum 15 chiffres, tous pays confondus (indicatif inclus).
+      if (_facebookTelephoneTemp.length > 15) {
+        _facebookTelephoneTemp = _facebookTelephoneTemp.substring(0, 15);
+      }
 
-      try {
-        final resultatCompte = await ShadyaAgentBridge.ouvrirCompteFacebook(
-          telephone: telephone,
-          prenom: _facebookPrenomTemp,
-          nom: _facebookNomTemp,
-        );
+      final finDemandee = _estFinNumero(texte);
 
-        if (resultatCompte != null) {
-          final lecture = ShadyaPasswordService.formaterPourLectureVocale(resultatCompte);
-          final msg = "J'ai créé ton compte Facebook pour $_facebookPrenomTemp. Ton mot de passe est : $lecture. Je m'en souviens pour toi.";
-          setState(() => _recognizedText = "Shadya : $msg");
-          await _speak(msg);
-        } else {
-          const msg = "Je te reconnecte à ton compte Facebook.";
-          setState(() => _recognizedText = "Shadya : $msg");
-          await _speak(msg);
-        }
-      } catch (e, stack) {
-        await _ecrireCrashLog('Erreur ouvrirCompteFacebook: $e\n$stack');
-        const msg = "Il y a eu un problème technique avec Facebook.";
+      if (!finDemandee) {
+        final msg = _facebookTelephoneTemp.isEmpty
+            ? "Je n'ai pas entendu. Continue."
+            : "$_facebookTelephoneTemp. Continue, ou dis terminé.";
         setState(() => _recognizedText = "Shadya : $msg");
         await _speak(msg);
+        return true;
       }
 
-      try {
-        final uriFacebook = Uri.parse('fb://');
-        if (await canLaunchUrl(uriFacebook)) {
-          await launchUrl(uriFacebook, mode: LaunchMode.externalApplication);
-        } else {
-          await launchUrl(Uri.parse('https://www.facebook.com'), mode: LaunchMode.externalApplication);
-        }
-      } catch (e, stack) {
-        await _ecrireCrashLog('Erreur ouverture Facebook: $e\n$stack');
+      // L'utilisateur a signalé la fin du numéro : on vérifie une longueur
+      // minimale plausible (les numéros les plus courts au monde, indicatif
+      // compris, avoisinent les 6-7 chiffres) avant d'accepter.
+      if (_facebookTelephoneTemp.length < 6) {
+        const msg = "Numéro trop court. Continue.";
+        setState(() => _recognizedText = "Shadya : $msg");
+        await _speak(msg);
+        return true;
       }
 
-      // Le flux reste actif encore quelques minutes après l'ouverture de
-      // Facebook (coupure automatique de sécurité côté service natif),
-      // le temps que l'utilisateur termine réellement l'inscription —
-      // désactiver immédiatement ici empêcherait la gestion du sélecteur
-      // de date et des autres écrans système qui apparaissent après coup.
-      
-      _facebookPrenomTemp = '';
-      _facebookNomTemp = '';
+      _facebookEtape = 'attente_confirmation_telephone';
+      final msg = "$_facebookTelephoneTemp, c'est correct ?";
+      setState(() => _recognizedText = "Shadya : $msg");
+      await _speak(msg);
+      return true;
+    }
+
+    if (_facebookEtape == 'attente_confirmation_telephone') {
+      if (_estConfirmationPositive(texte)) {
+        final telephone = _facebookTelephoneTemp;
+        _facebookTelephoneTemp = '';
+        _facebookEtape = null;
+        await _finaliserFluxFacebook(telephone);
+        return true;
+      }
+
+      if (_estConfirmationNegative(texte)) {
+        _facebookTelephoneTemp = '';
+        _facebookEtape = 'attente_telephone';
+        const msg = "D'accord. Redis ton numéro.";
+        setState(() => _recognizedText = "Shadya : $msg");
+        await _speak(msg);
+        return true;
+      }
+
+      const msg = "Dis oui ou non.";
+      setState(() => _recognizedText = "Shadya : $msg");
+      await _speak(msg);
       return true;
     }
 
     return false;
+  }
+
+  // Termine le flux Facebook : soumet les informations du compte via le
+  // service d'accessibilité natif, puis ouvre l'application Facebook.
+  Future<void> _finaliserFluxFacebook(String telephone) async {
+    setState(() => _recognizedText = "Shadya : Un instant.");
+    await _speak("Un instant.");
+
+    try {
+      final resultatCompte = await ShadyaAgentBridge.ouvrirCompteFacebook(
+        telephone: telephone,
+        prenom: _facebookPrenomTemp,
+        nom: _facebookNomTemp,
+      );
+
+      if (resultatCompte != null) {
+        final lecture = ShadyaPasswordService.formaterPourLectureVocale(resultatCompte);
+        final msg = "Compte créé pour $_facebookPrenomTemp. Mot de passe : $lecture. Je m'en souviens.";
+        setState(() => _recognizedText = "Shadya : $msg");
+        await _speak(msg);
+      } else {
+        const msg = "Je te reconnecte.";
+        setState(() => _recognizedText = "Shadya : $msg");
+        await _speak(msg);
+      }
+    } catch (e, stack) {
+      await _ecrireCrashLog('Erreur ouvrirCompteFacebook: $e\n$stack');
+      const msg = "Problème technique avec Facebook.";
+      setState(() => _recognizedText = "Shadya : $msg");
+      await _speak(msg);
+    }
+
+    try {
+      final uriFacebook = Uri.parse('fb://');
+      if (await canLaunchUrl(uriFacebook)) {
+        await launchUrl(uriFacebook, mode: LaunchMode.externalApplication);
+      } else {
+        await launchUrl(Uri.parse('https://www.facebook.com'), mode: LaunchMode.externalApplication);
+      }
+    } catch (e, stack) {
+      await _ecrireCrashLog('Erreur ouverture Facebook: $e\n$stack');
+    }
+
+    // Le flux reste actif encore quelques minutes après l'ouverture de
+    // Facebook (coupure automatique de sécurité côté service natif),
+    // le temps que l'utilisateur termine réellement l'inscription —
+    // désactiver immédiatement ici empêcherait la gestion du sélecteur
+    // de date et des autres écrans système qui apparaissent après coup.
+
+    _facebookPrenomTemp = '';
+    _facebookNomTemp = '';
   }
 
   Future<bool> _essayerOuvrirApplication(String texte) async {
@@ -939,7 +1038,7 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
       // flux : nécessaire pour que le sélecteur de date de naissance (affiché
       // par le système, pas par Facebook lui-même) soit pris en charge.
       await ShadyaAgentBridge.activerFluxAndroid();
-      await _speak("D'accord, je vais créer ou retrouver ton compte Facebook. Dis-moi ton prénom et ton nom.");
+      await _speak("D'accord. Dis ton prénom et ton nom.");
       return true;
     }
 
