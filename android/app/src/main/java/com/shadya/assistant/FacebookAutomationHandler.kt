@@ -53,6 +53,36 @@ class FacebookAutomationHandler(private val service: AccessibilityService) {
     }
 
     private fun handleSignup(rootNode: AccessibilityNodeInfo) {
+        // Détection de fin de parcours : présence du fil d'actualité ou de la
+        // barre de navigation principale, signe que le compte est créé et que
+        // Facebook est arrivé sur l'écran d'accueil. On désactive alors le
+        // flux côté service natif pour éviter toute action ultérieure non
+        // désirée sur d'autres écrans système ou applications.
+        val homeIndicators = findNodesByText(rootNode, listOf(
+            "Quoi de neuf", "What's on your mind", "Fil d'actualité", "News Feed", "Home"
+        ))
+        if (homeIndicators.isNotEmpty()) {
+            ShadyaAgentService.deactivateFlow()
+            return
+        }
+
+        // Écran "Select your name" : Facebook rejette le nom saisi et propose
+        // des variantes via des boutons radio (le nom exact varie et ne peut
+        // pas être anticipé par une liste de textes candidats). On sélectionne
+        // la première suggestion proposée, puis on poursuit avec "Next".
+        val demandeSelectionNom = findNodesByText(rootNode, listOf(
+            "Please select your name", "Veuillez sélectionner votre nom",
+            "Select your name", "Sélectionnez votre nom"
+        ))
+        if (demandeSelectionNom.isNotEmpty()) {
+            val premierBoutonRadio = findFirstRadioButton(rootNode)
+            if (premierBoutonRadio != null) {
+                performClick(premierBoutonRadio)
+                clickNextButton(rootNode)
+            }
+            return
+        }
+
         val createAccountButtons = findNodesByText(rootNode, listOf(
             "Créer un compte", "Create new account", "S'inscrire",
             "Get started", "GET STARTED", "Get Started"
@@ -61,7 +91,7 @@ class FacebookAutomationHandler(private val service: AccessibilityService) {
             performClick(createAccountButtons.first())
             return
         }
-        
+
         // Popup système "Choose an email address to auto-fill your details"
         val skipButtons = findNodesByText(rootNode, listOf("Skip", "Ignorer"))
         val okButtons = findNodesByText(rootNode, listOf("OK"))
@@ -104,7 +134,7 @@ class FacebookAutomationHandler(private val service: AccessibilityService) {
             return
         }
 
-        // Fallback : si aucun champ connu ne correspond, tente quand même
+        // Fallback : si aucun écran connu ne correspond, tente quand même
         // de cliquer sur un bouton "suivant" générique (utile pour les écrans
         // non explicitement gérés, comme la validation de la date de naissance).
         clickNextButton(rootNode)
@@ -158,5 +188,19 @@ class FacebookAutomationHandler(private val service: AccessibilityService) {
             }
         }
         return result
+    }
+
+    // Recherche récursive du premier bouton radio dans l'arborescence —
+    // utilisé pour les écrans de choix (ex: sélection d'un nom suggéré),
+    // où le bon élément ne peut pas être identifié par son texte puisqu'il
+    // varie à chaque tentative (variantes générées dynamiquement par Facebook).
+    private fun findFirstRadioButton(node: AccessibilityNodeInfo?): AccessibilityNodeInfo? {
+        if (node == null) return null
+        if (node.className == "android.widget.RadioButton") return node
+        for (i in 0 until node.childCount) {
+            val trouve = findFirstRadioButton(node.getChild(i))
+            if (trouve != null) return trouve
+        }
+        return null
     }
 }
