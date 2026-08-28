@@ -110,9 +110,10 @@ class FacebookAutomationHandler(private val service: AccessibilityService) {
         if (setDateButtons.isNotEmpty() && cancelButtons.isNotEmpty()) {
             val moletteAnnee = findYearPicker(rootNode)
             if (moletteAnnee != null) {
-                repeat(20) {
-                    moletteAnnee.performAction(AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD)
-                }
+                // Utilise l'âge dicté par l'utilisateur si disponible ; à
+                // défaut (âge non fourni), retombe sur 20 ans par sécurité.
+                val ageVoulu = userData.age.toIntOrNull() ?: 20
+                ajusterMoletteAnnee(moletteAnnee, ageVoulu)
             }
             performClick(setDateButtons.first())
             return
@@ -200,6 +201,27 @@ class FacebookAutomationHandler(private val service: AccessibilityService) {
         return result
     }
 
+    // Fait défiler la molette de l'année vers le passé jusqu'à obtenir l'âge
+    // indiqué par l'utilisateur (ou 20 ans par défaut si non fourni). Relit
+    // la valeur réelle via rangeInfo après chaque action plutôt que de
+    // supposer un pas fixe : un seul appel à ACTION_SCROLL_BACKWARD peut
+    // faire varier la valeur de plusieurs unités selon l'implémentation du
+    // composant, rendant un simple compteur fixe imprécis.
+    private fun ajusterMoletteAnnee(molette: AccessibilityNodeInfo, ageAns: Int) {
+        val valeurInitiale = molette.rangeInfo?.current?.toInt() ?: return
+        val anneeCible = valeurInitiale - ageAns
+        var noeudCourant: AccessibilityNodeInfo? = molette
+        var securite = 0
+
+        while (noeudCourant != null && securite < 150) {
+            noeudCourant.refresh()
+            val valeurActuelle = noeudCourant.rangeInfo?.current?.toInt() ?: break
+            if (valeurActuelle <= anneeCible) break
+            noeudCourant.performAction(AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD)
+            securite++
+        }
+    }
+
     // Recherche récursive de la molette (NumberPicker) affichant l'année dans
     // le sélecteur de date — reconnue au fait que son texte, ou celui de l'un
     // de ses enfants, est une suite de 4 chiffres (ex: "2026").
@@ -234,4 +256,3 @@ class FacebookAutomationHandler(private val service: AccessibilityService) {
         return null
     }
 }
-
