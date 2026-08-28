@@ -9,7 +9,11 @@ data class UserAccountData(
     val firstName: String = "",
     val lastName: String = "",
     val phone: String = "",
-    val password: String = ""
+    val password: String = "",
+    // Âge dicté par l'utilisateur, utilisé pour calculer précisément
+    // l'année de naissance à sélectionner sur l'écran "date of birth"
+    // de Facebook (voir FacebookAutomationHandler.ajusterMoletteAnnee).
+    val age: String = ""
 )
 
 class ShadyaAgentService : AccessibilityService() {
