@@ -100,10 +100,20 @@ class FacebookAutomationHandler(private val service: AccessibilityService) {
             return
         }
 
-        // Écran "What's your date of birth?" — valide avec la date affichée par défaut
+        // Écran "What's your date of birth?" — la date affichée par défaut est
+        // celle du jour même (âge 0 an), que Facebook rejette systématiquement
+        // en renvoyant sur ce même écran, provoquant une boucle infinie. On
+        // fait donc défiler la molette de l'année vers le passé avant de
+        // valider, pour obtenir un âge plausible (~20 ans) et adulte.
         val setDateButtons = findNodesByText(rootNode, listOf("SET"))
         val cancelButtons = findNodesByText(rootNode, listOf("CANCEL"))
         if (setDateButtons.isNotEmpty() && cancelButtons.isNotEmpty()) {
+            val moletteAnnee = findYearPicker(rootNode)
+            if (moletteAnnee != null) {
+                repeat(20) {
+                    moletteAnnee.performAction(AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD)
+                }
+            }
             performClick(setDateButtons.first())
             return
         }
@@ -188,6 +198,26 @@ class FacebookAutomationHandler(private val service: AccessibilityService) {
             }
         }
         return result
+    }
+
+    // Recherche récursive de la molette (NumberPicker) affichant l'année dans
+    // le sélecteur de date — reconnue au fait que son texte, ou celui de l'un
+    // de ses enfants, est une suite de 4 chiffres (ex: "2026").
+    private fun findYearPicker(node: AccessibilityNodeInfo?): AccessibilityNodeInfo? {
+        if (node == null) return null
+        if (node.className == "android.widget.NumberPicker") {
+            val texteNoeud = node.text?.toString()?.trim() ?: ""
+            if (Regex("^\\d{4}$").matches(texteNoeud)) return node
+            for (i in 0 until node.childCount) {
+                val texteEnfant = node.getChild(i)?.text?.toString()?.trim() ?: ""
+                if (Regex("^\\d{4}$").matches(texteEnfant)) return node
+            }
+        }
+        for (i in 0 until node.childCount) {
+            val trouve = findYearPicker(node.getChild(i))
+            if (trouve != null) return trouve
+        }
+        return null
     }
 
     // Recherche récursive du premier bouton radio dans l'arborescence —
