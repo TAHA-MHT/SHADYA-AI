@@ -35,6 +35,7 @@ class ShadyaAgentBridge {
     required String telephone,
     String prenom = "",
     String nom = "",
+    String age = "",
   }) async {
     final motDePasseExistant = await ShadyaPasswordService.recupererMotDePasse(
       telephone: telephone,
@@ -47,6 +48,7 @@ class ShadyaAgentBridge {
         'lastName': '',
         'phone': telephone,
         'password': motDePasseExistant,
+        'age': age,
         'mode': 'login',
       });
       return null;
@@ -64,6 +66,7 @@ class ShadyaAgentBridge {
         'lastName': nom,
         'phone': telephone,
         'password': nouveauMotDePasse,
+        'age': age,
         'mode': 'signup',
       });
 
@@ -184,11 +187,13 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
 
   // État du flux de création de compte Facebook en plusieurs étapes
   // null, "attente_nom", "attente_nom_famille", "attente_confirmation_nom",
-  // "attente_telephone", "attente_confirmation_telephone"
+  // "attente_telephone", "attente_confirmation_telephone",
+  // "attente_age", "attente_confirmation_age"
   String? _facebookEtape;
   String _facebookPrenomTemp = '';
   String _facebookNomTemp = '';
   String _facebookTelephoneTemp = '';
+  String _facebookAgeTemp = '';
 
   List<Contact> _contacts = [];
 
@@ -723,6 +728,24 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
     return numeroNettoye;
   }
 
+  // Extrait un âge dicté par l'utilisateur (chiffres ou nombre en toutes
+  // lettres), borné entre 1 et 120 pour écarter toute valeur aberrante.
+  int? _extraireAge(String texte) {
+    final matchChiffres = RegExp(r'\d{1,3}').firstMatch(texte);
+    if (matchChiffres != null) {
+      final n = int.tryParse(matchChiffres.group(0)!);
+      if (n != null && n >= 1 && n <= 120) return n;
+    }
+
+    final depuisMots = _extraireNombreDansSegment(texte, depuisLaFin: false) ??
+        _extraireNombreDansSegment(texte, depuisLaFin: true);
+    if (depuisMots != null && depuisMots >= 1 && depuisMots <= 120) {
+      return depuisMots;
+    }
+
+    return null;
+  }
+
   // Détecte une confirmation positive ("oui", "correct", "exact"...).
   bool _estConfirmationPositive(String texte) {
     final t = texte.toLowerCase();
@@ -814,6 +837,7 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
       _facebookPrenomTemp = '';
       _facebookNomTemp = '';
       _facebookTelephoneTemp = '';
+      _facebookAgeTemp = '';
       await ShadyaAgentBridge.desactiverFluxAndroid();
       const msg = "D'accord, j'annule.";
       setState(() => _recognizedText = "Shadya : $msg");
@@ -948,10 +972,10 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
 
     if (_facebookEtape == 'attente_confirmation_telephone') {
       if (_estConfirmationPositive(texte)) {
-        final telephone = _facebookTelephoneTemp;
-        _facebookTelephoneTemp = '';
-        _facebookEtape = null;
-        await _finaliserFluxFacebook(telephone);
+        _facebookEtape = 'attente_age';
+        const msg = "Quel âge as-tu ?";
+        setState(() => _recognizedText = "Shadya : $msg");
+        await _speak(msg);
         return true;
       }
 
@@ -970,12 +994,56 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
       return true;
     }
 
+    if (_facebookEtape == 'attente_age') {
+      final age = _extraireAge(texte);
+
+      if (age == null) {
+        const msg = "Je n'ai pas compris. Quel âge as-tu ?";
+        setState(() => _recognizedText = "Shadya : $msg");
+        await _speak(msg);
+        return true;
+      }
+
+      _facebookAgeTemp = age.toString();
+      _facebookEtape = 'attente_confirmation_age';
+      final msg = "Tu as $age ans, c'est correct ?";
+      setState(() => _recognizedText = "Shadya : $msg");
+      await _speak(msg);
+      return true;
+    }
+
+    if (_facebookEtape == 'attente_confirmation_age') {
+      if (_estConfirmationPositive(texte)) {
+        final telephone = _facebookTelephoneTemp;
+        final age = _facebookAgeTemp;
+        _facebookTelephoneTemp = '';
+        _facebookAgeTemp = '';
+        _facebookEtape = null;
+        await _finaliserFluxFacebook(telephone, age);
+        return true;
+      }
+
+      if (_estConfirmationNegative(texte)) {
+        _facebookAgeTemp = '';
+        _facebookEtape = 'attente_age';
+        const msg = "D'accord. Quel âge as-tu ?";
+        setState(() => _recognizedText = "Shadya : $msg");
+        await _speak(msg);
+        return true;
+      }
+
+      const msg = "Dis oui ou non.";
+      setState(() => _recognizedText = "Shadya : $msg");
+      await _speak(msg);
+      return true;
+    }
+
     return false;
   }
 
   // Termine le flux Facebook : soumet les informations du compte via le
   // service d'accessibilité natif, puis ouvre l'application Facebook.
-  Future<void> _finaliserFluxFacebook(String telephone) async {
+  Future<void> _finaliserFluxFacebook(String telephone, String age) async {
     setState(() => _recognizedText = "Shadya : Un instant.");
     await _speak("Un instant.");
 
@@ -984,6 +1052,7 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
         telephone: telephone,
         prenom: _facebookPrenomTemp,
         nom: _facebookNomTemp,
+        age: age,
       );
 
       if (resultatCompte != null) {
@@ -1034,6 +1103,7 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
     if (texteMinuscule.contains('facebook')) {
       _facebookEtape = 'attente_nom';
       _facebookTelephoneTemp = '';
+      _facebookAgeTemp = '';
       // Active la surveillance des dialogues système AVANT d'entrer dans le
       // flux : nécessaire pour que le sélecteur de date de naissance (affiché
       // par le système, pas par Facebook lui-même) soit pris en charge.
