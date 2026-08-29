@@ -1,6 +1,9 @@
 package com.shadya.assistant
 
 import android.accessibilityservice.AccessibilityService
+import android.accessibilityservice.GestureDescription
+import android.graphics.Path
+import android.graphics.Rect
 import android.os.Bundle
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
@@ -132,15 +135,15 @@ class FacebookAutomationHandler(private val service: AccessibilityService) {
                 return
             }
 
-            // Un seul défilement par appel : on laisse l'interface se
-            // rafraîchir avant de relire la valeur au prochain événement
-            // d'accessibilité, plutôt que d'enchaîner plusieurs défilements
-            // d'affilée sans attendre la mise à jour de l'écran (ce qui
-            // provoquait un dépassement massif de la valeur, l'ancienne
-            // valeur étant relue plusieurs fois avant que l'affichage bouge).
-            val noeudAnnee = findNodeAvecAnnee(rootNode) ?: return
-            val conteneur = findScrollableAncestor(noeudAnnee) ?: noeudAnnee
-            conteneur.performAction(AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD)
+            // Un seul geste de glissement par appel : on laisse l'interface
+            // se rafraîchir avant de relire la valeur au prochain événement
+            // d'accessibilité. L'action de défilement standard s'est avérée
+            // trop grossière sur ce composant (elle saute des dizaines
+            // d'années par appel, quel que soit le nombre d'appels) ; on
+            // simule donc un vrai geste de glissement du doigt, calibré sur
+            // l'espacement réel entre deux années visibles à l'écran, pour
+            // avancer d'exactement une unité à la fois.
+            swipeUneAnnee(rootNode, versLePasse = true)
             return
         }
 
@@ -242,15 +245,52 @@ class FacebookAutomationHandler(private val service: AccessibilityService) {
         return null
     }
 
-    // Remonte l'arborescence depuis un nœud jusqu'au premier ancêtre marqué
-    // comme "scrollable", peu importe son type exact de composant.
-    private fun findScrollableAncestor(node: AccessibilityNodeInfo?): AccessibilityNodeInfo? {
-        var courant: AccessibilityNodeInfo? = node
-        while (courant != null) {
-            if (courant.isScrollable) return courant
-            courant = courant.parent
+    // Recherche récursive de TOUS les nœuds affichant une année plausible
+    // (utilisé pour repérer simultanément l'année du dessus, celle du
+    // milieu et celle du dessous, afin de mesurer l'espacement réel entre
+    // deux rangées consécutives du sélecteur).
+    private fun findToutesLesAnnees(node: AccessibilityNodeInfo?, resultat: MutableList<AccessibilityNodeInfo>) {
+        if (node == null) return
+        val texte = node.text?.toString()?.trim() ?: ""
+        if (Regex("^(19|20)\\d{2}$").matches(texte)) resultat.add(node)
+        for (i in 0 until node.childCount) {
+            findToutesLesAnnees(node.getChild(i), resultat)
         }
-        return null
+    }
+
+    // Simule un glissement du doigt d'exactement une rangée (une année),
+    // calibré sur l'espacement réel mesuré entre les années actuellement
+    // visibles à l'écran plutôt que sur une distance fixe supposée.
+    private fun swipeUneAnnee(rootNode: AccessibilityNodeInfo, versLePasse: Boolean): Boolean {
+        val noeudsAnnees = mutableListOf<AccessibilityNodeInfo>()
+        findToutesLesAnnees(rootNode, noeudsAnnees)
+        if (noeudsAnnees.isEmpty()) return false
+
+        val zonesEcran = noeudsAnnees.map { noeud ->
+            Rect().also { noeud.getBoundsInScreen(it) }
+        }
+        val centresY = zonesEcran.map { it.centerY() }.sorted()
+
+        // Espacement moyen entre deux rangées consécutives (ex : l'année du
+        // dessus et l'année du milieu). À défaut de pouvoir le mesurer (une
+        // seule année détectée), on retombe sur une valeur approximative.
+        val ecarts = centresY.zipWithNext { a, b -> b - a }
+        val ecartMoyen = if (ecarts.isNotEmpty()) ecarts.average().toInt() else 70
+
+        val centerX = zonesEcran.first().centerX().toFloat()
+        val centerY = zonesEcran.first().centerY().toFloat()
+        val yDepart = centerY
+        val yArrivee = if (versLePasse) centerY + ecartMoyen else centerY - ecartMoyen
+
+        val chemin = Path().apply {
+            moveTo(centerX, yDepart)
+            lineTo(centerX, yArrivee)
+        }
+        val geste = GestureDescription.Builder()
+            .addStroke(GestureDescription.StrokeDescription(chemin, 0, 120))
+            .build()
+
+        return service.dispatchGesture(geste, null, null)
     }
 
     // Lit l'année actuellement affichée en repartant de la fenêtre active à
