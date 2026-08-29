@@ -108,13 +108,8 @@ class FacebookAutomationHandler(private val service: AccessibilityService) {
         val setDateButtons = findNodesByText(rootNode, listOf("SET"))
         val cancelButtons = findNodesByText(rootNode, listOf("CANCEL"))
         if (setDateButtons.isNotEmpty() && cancelButtons.isNotEmpty()) {
-            val moletteAnnee = findYearPicker(rootNode)
-            if (moletteAnnee != null) {
-                // Utilise l'âge dicté par l'utilisateur si disponible ; à
-                // défaut (âge non fourni), retombe sur 20 ans par sécurité.
-                val ageVoulu = userData.age.toIntOrNull() ?: 20
-                ajusterMoletteAnnee(moletteAnnee, ageVoulu)
-            }
+            val ageVoulu = userData.age.toIntOrNull() ?: 20
+            ajusterMoletteAnnee(ageVoulu)
             performClick(setDateButtons.first())
             return
         }
@@ -201,45 +196,63 @@ class FacebookAutomationHandler(private val service: AccessibilityService) {
         return result
     }
 
-    // Fait défiler la molette de l'année vers le passé jusqu'à obtenir l'âge
-    // indiqué par l'utilisateur (ou 20 ans par défaut si non fourni). Relit
-    // la valeur réelle via rangeInfo après chaque action plutôt que de
-    // supposer un pas fixe : un seul appel à ACTION_SCROLL_BACKWARD peut
-    // faire varier la valeur de plusieurs unités selon l'implémentation du
-    // composant, rendant un simple compteur fixe imprécis.
-    private fun ajusterMoletteAnnee(molette: AccessibilityNodeInfo, ageAns: Int) {
-        val valeurInitiale = molette.rangeInfo?.current?.toInt() ?: return
-        val anneeCible = valeurInitiale - ageAns
-        var noeudCourant: AccessibilityNodeInfo? = molette
-        var securite = 0
-
-        while (noeudCourant != null && securite < 150) {
-            noeudCourant.refresh()
-            val valeurActuelle = noeudCourant.rangeInfo?.current?.toInt() ?: break
-            if (valeurActuelle <= anneeCible) break
-            noeudCourant.performAction(AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD)
-            securite++
-        }
-    }
-
-    // Recherche récursive de la molette (NumberPicker) affichant l'année dans
-    // le sélecteur de date — reconnue au fait que son texte, ou celui de l'un
-    // de ses enfants, est une suite de 4 chiffres (ex: "2026").
-    private fun findYearPicker(node: AccessibilityNodeInfo?): AccessibilityNodeInfo? {
+    // Recherche récursive d'un nœud dont le texte affiché correspond à une
+    // année plausible (1900-2099). Approche volontairement générique : elle
+    // ne suppose aucun type de composant précis (ex: NumberPicker), car
+    // certaines applications (dont Facebook) utilisent leur propre sélecteur
+    // de date personnalisé plutôt que le composant standard Android.
+    private fun findNodeAvecAnnee(node: AccessibilityNodeInfo?): AccessibilityNodeInfo? {
         if (node == null) return null
-        if (node.className == "android.widget.NumberPicker") {
-            val texteNoeud = node.text?.toString()?.trim() ?: ""
-            if (Regex("^\\d{4}$").matches(texteNoeud)) return node
-            for (i in 0 until node.childCount) {
-                val texteEnfant = node.getChild(i)?.text?.toString()?.trim() ?: ""
-                if (Regex("^\\d{4}$").matches(texteEnfant)) return node
-            }
-        }
+        val texte = node.text?.toString()?.trim() ?: ""
+        if (Regex("^(19|20)\\d{2}$").matches(texte)) return node
         for (i in 0 until node.childCount) {
-            val trouve = findYearPicker(node.getChild(i))
+            val trouve = findNodeAvecAnnee(node.getChild(i))
             if (trouve != null) return trouve
         }
         return null
+    }
+
+    // Remonte l'arborescence depuis un nœud jusqu'au premier ancêtre marqué
+    // comme "scrollable", peu importe son type exact de composant.
+    private fun findScrollableAncestor(node: AccessibilityNodeInfo?): AccessibilityNodeInfo? {
+        var courant: AccessibilityNodeInfo? = node
+        while (courant != null) {
+            if (courant.isScrollable) return courant
+            courant = courant.parent
+        }
+        return null
+    }
+
+    // Lit l'année actuellement affichée en repartant de la fenêtre active à
+    // chaque appel (plutôt que de garder une référence de nœud, susceptible
+    // de devenir invalide après un défilement).
+    private fun lireAnneeAffichee(): Int? {
+        val racine = service.rootInActiveWindow ?: return null
+        val noeud = findNodeAvecAnnee(racine) ?: return null
+        return noeud.text?.toString()?.trim()?.toIntOrNull()
+    }
+
+    // Fait défiler la molette/le composant d'année vers le passé jusqu'à
+    // obtenir l'âge indiqué par l'utilisateur (ou 20 ans par défaut). Relit
+    // la valeur réellement affichée après chaque action, et recherche à
+    // nouveau le composant scrollable à chaque itération (sans conserver de
+    // référence fixe), pour rester fiable même si l'interface se redessine
+    // entre deux défilements.
+    private fun ajusterMoletteAnnee(ageAns: Int) {
+        val anneeInitiale = lireAnneeAffichee() ?: return
+        val anneeCible = anneeInitiale - ageAns
+        var securite = 0
+
+        while (securite < 150) {
+            val anneeActuelle = lireAnneeAffichee() ?: break
+            if (anneeActuelle <= anneeCible) break
+
+            val racine = service.rootInActiveWindow ?: break
+            val noeudAnnee = findNodeAvecAnnee(racine) ?: break
+            val conteneur = findScrollableAncestor(noeudAnnee) ?: noeudAnnee
+            conteneur.performAction(AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD)
+            securite++
+        }
     }
 
     // Recherche récursive du premier bouton radio dans l'arborescence —
