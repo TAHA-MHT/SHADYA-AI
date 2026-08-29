@@ -10,6 +10,11 @@ class FacebookAutomationHandler(private val service: AccessibilityService) {
     var userData: UserAccountData = UserAccountData()
     var mode: String = "signup"
 
+    // Année cible en cours de calcul pour l'écran "date de naissance" —
+    // conservée entre plusieurs appels successifs (un défilement par appel),
+    // et réinitialisée une fois la date validée.
+    private var anneeCibleEnCours: Int? = null
+
     fun handleAccessibilityEvent(event: AccessibilityEvent) {
         val rootNode = service.rootInActiveWindow ?: return
 
@@ -108,9 +113,34 @@ class FacebookAutomationHandler(private val service: AccessibilityService) {
         val setDateButtons = findNodesByText(rootNode, listOf("SET"))
         val cancelButtons = findNodesByText(rootNode, listOf("CANCEL"))
         if (setDateButtons.isNotEmpty() && cancelButtons.isNotEmpty()) {
-            val ageVoulu = userData.age.toIntOrNull() ?: 20
-            ajusterMoletteAnnee(ageVoulu)
-            performClick(setDateButtons.first())
+            val anneeActuelle = lireAnneeAffichee()
+            if (anneeActuelle == null) {
+                // Impossible de lire l'année affichée : on valide telle
+                // quelle plutôt que de bloquer indéfiniment sur cet écran.
+                performClick(setDateButtons.first())
+                return
+            }
+
+            if (anneeCibleEnCours == null) {
+                val ageVoulu = userData.age.toIntOrNull() ?: 20
+                anneeCibleEnCours = anneeActuelle - ageVoulu
+            }
+
+            if (anneeActuelle <= anneeCibleEnCours!!) {
+                anneeCibleEnCours = null
+                performClick(setDateButtons.first())
+                return
+            }
+
+            // Un seul défilement par appel : on laisse l'interface se
+            // rafraîchir avant de relire la valeur au prochain événement
+            // d'accessibilité, plutôt que d'enchaîner plusieurs défilements
+            // d'affilée sans attendre la mise à jour de l'écran (ce qui
+            // provoquait un dépassement massif de la valeur, l'ancienne
+            // valeur étant relue plusieurs fois avant que l'affichage bouge).
+            val noeudAnnee = findNodeAvecAnnee(rootNode) ?: return
+            val conteneur = findScrollableAncestor(noeudAnnee) ?: noeudAnnee
+            conteneur.performAction(AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD)
             return
         }
 
@@ -230,29 +260,6 @@ class FacebookAutomationHandler(private val service: AccessibilityService) {
         val racine = service.rootInActiveWindow ?: return null
         val noeud = findNodeAvecAnnee(racine) ?: return null
         return noeud.text?.toString()?.trim()?.toIntOrNull()
-    }
-
-    // Fait défiler la molette/le composant d'année vers le passé jusqu'à
-    // obtenir l'âge indiqué par l'utilisateur (ou 20 ans par défaut). Relit
-    // la valeur réellement affichée après chaque action, et recherche à
-    // nouveau le composant scrollable à chaque itération (sans conserver de
-    // référence fixe), pour rester fiable même si l'interface se redessine
-    // entre deux défilements.
-    private fun ajusterMoletteAnnee(ageAns: Int) {
-        val anneeInitiale = lireAnneeAffichee() ?: return
-        val anneeCible = anneeInitiale - ageAns
-        var securite = 0
-
-        while (securite < 150) {
-            val anneeActuelle = lireAnneeAffichee() ?: break
-            if (anneeActuelle <= anneeCible) break
-
-            val racine = service.rootInActiveWindow ?: break
-            val noeudAnnee = findNodeAvecAnnee(racine) ?: break
-            val conteneur = findScrollableAncestor(noeudAnnee) ?: noeudAnnee
-            conteneur.performAction(AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD)
-            securite++
-        }
     }
 
     // Recherche récursive du premier bouton radio dans l'arborescence —
