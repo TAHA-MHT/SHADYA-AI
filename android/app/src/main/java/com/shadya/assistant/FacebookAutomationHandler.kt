@@ -5,6 +5,8 @@ import android.accessibilityservice.GestureDescription
 import android.graphics.Path
 import android.graphics.Rect
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 
@@ -17,6 +19,16 @@ class FacebookAutomationHandler(private val service: AccessibilityService) {
     // conservée entre plusieurs appels successifs (un défilement par appel),
     // et réinitialisée une fois la date validée.
     private var anneeCibleEnCours: Int? = null
+
+    // Verrou temporel : Android envoie souvent plusieurs événements
+    // d'accessibilité très rapprochés pour un seul changement d'écran. Sans
+    // ce verrou, chacun de ces événements déclenchait son propre geste de
+    // glissement avant que l'écran précédent n'ait eu le temps de se
+    // rafraîchir, provoquant un saut de plusieurs dizaines d'années d'un
+    // coup. Le verrou garantit qu'un seul geste part à la fois, avec une
+    // pause pour laisser l'affichage se stabiliser avant le suivant.
+    private var ajustementEnCours = false
+    private val handlerAnnee = Handler(Looper.getMainLooper())
 
     fun handleAccessibilityEvent(event: AccessibilityEvent) {
         val rootNode = service.rootInActiveWindow ?: return
@@ -116,6 +128,11 @@ class FacebookAutomationHandler(private val service: AccessibilityService) {
         val setDateButtons = findNodesByText(rootNode, listOf("SET"))
         val cancelButtons = findNodesByText(rootNode, listOf("CANCEL"))
         if (setDateButtons.isNotEmpty() && cancelButtons.isNotEmpty()) {
+            // Si un geste précédent est encore "en pause de stabilisation",
+            // on ignore cet événement plutôt que d'en déclencher un autre
+            // par-dessus — c'est le cœur de la correction du saut massif.
+            if (ajustementEnCours) return
+
             val anneeActuelle = lireAnneeAffichee()
             if (anneeActuelle == null) {
                 // Impossible de lire l'année affichée : on valide telle
@@ -143,7 +160,9 @@ class FacebookAutomationHandler(private val service: AccessibilityService) {
             // simule donc un vrai geste de glissement du doigt, calibré sur
             // l'espacement réel entre deux années visibles à l'écran, pour
             // avancer d'exactement une unité à la fois.
+            ajustementEnCours = true
             swipeUneAnnee(rootNode, versLePasse = true)
+            handlerAnnee.postDelayed({ ajustementEnCours = false }, 350L)
             return
         }
 
