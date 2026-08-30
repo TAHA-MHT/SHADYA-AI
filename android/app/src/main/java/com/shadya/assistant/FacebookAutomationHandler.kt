@@ -193,9 +193,17 @@ class FacebookAutomationHandler(private val service: AccessibilityService) {
         }
 
         // Fallback : si aucun écran connu ne correspond, tente quand même
-        // de cliquer sur un bouton "suivant" générique (utile pour les écrans
-        // non explicitement gérés, comme la validation de la date de naissance).
-        clickNextButton(rootNode)
+        // de cliquer sur un bouton "suivant" générique — mais UNIQUEMENT si
+        // la fenêtre active appartient réellement à Facebook. Sans cette
+        // vérification, un événement système déclenché pendant que le flux
+        // reste actif par erreur (ex: en quittant une autre application)
+        // pouvait faire cliquer ce filet de sécurité sur un bouton "Next"/
+        // "Continue" d'une app totalement différente, avec le risque de
+        // ramener Facebook au premier plan de façon inattendue.
+        val packageActif = rootNode.packageName?.toString() ?: ""
+        if (packageActif == "com.facebook.katana" || packageActif == "com.facebook.lite") {
+            clickNextButton(rootNode)
+        }
     }
 
     // Clique sur le nœud, ou remonte vers le premier parent cliquable si le nœud
