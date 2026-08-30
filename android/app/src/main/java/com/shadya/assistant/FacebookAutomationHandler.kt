@@ -31,6 +31,14 @@ class FacebookAutomationHandler(private val service: AccessibilityService) {
     private var derniereLectureStable: Int? = null
     private var lecturesIdentiquesConsecutives: Int = 0
 
+    // Sécurité supplémentaire : nombre de gestes déjà effectués pour la
+    // session en cours. Même avec un calibrage imparfait (risque de sauter
+    // plus d'une année par geste sur certains appareils), ce compteur
+    // garantit qu'on ne reste jamais bloqué indéfiniment sur cet écran —
+    // au-delà d'un certain nombre de tentatives, on valide tel quel plutôt
+    // que de continuer à essayer sans fin.
+    private var nombreSwipesEffectues: Int = 0
+
     // Verrou temporel : Android envoie souvent plusieurs événements
     // d'accessibilité très rapprochés pour un seul changement d'écran. Sans
     // ce verrou, chacun de ces événements déclenchait son propre geste de
@@ -99,6 +107,7 @@ class FacebookAutomationHandler(private val service: AccessibilityService) {
             anneeCibleEnCours = null
             derniereLectureStable = null
             lecturesIdentiquesConsecutives = 0
+            nombreSwipesEffectues = 0
         }
 
         // Détection de fin de parcours : présence du fil d'actualité ou de la
@@ -193,6 +202,15 @@ class FacebookAutomationHandler(private val service: AccessibilityService) {
             if (anneeActuelle <= anneeCibleEnCours!!) {
                 journaliser("Cible atteinte ($anneeActuelle <= ${anneeCibleEnCours}) → clic SET")
                 anneeCibleEnCours = null
+                nombreSwipesEffectues = 0
+                performClick(setDateButtons.first())
+                return
+            }
+
+            if (nombreSwipesEffectues >= 80) {
+                journaliser("Sécurité: trop de tentatives ($nombreSwipesEffectues), on valide tel quel")
+                anneeCibleEnCours = null
+                nombreSwipesEffectues = 0
                 performClick(setDateButtons.first())
                 return
             }
@@ -203,11 +221,19 @@ class FacebookAutomationHandler(private val service: AccessibilityService) {
             // trop grossière sur ce composant (elle saute des dizaines
             // d'années par appel, quel que soit le nombre d'appels) ; on
             // simule donc un vrai geste de glissement du doigt, calibré sur
-            // l'espacement réel entre deux années visibles à l'écran, pour
-            // avancer d'exactement une unité à la fois.
+            // l'espacement réel entre deux années visibles à l'écran. Pour
+            // limiter le temps d'attente total (surtout avec un grand écart
+            // d'âge), le geste parcourt jusqu'à 10 années en une seule fois,
+            // avec une durée proportionnellement allongée pour conserver une
+            // vitesse mesurée sans danger, plutôt que de refaire un geste
+            // séparé (et sa pause de stabilisation) pour chaque année.
+            val anneesRestantes = anneeActuelle - anneeCibleEnCours!!
+            val anneesParGeste = anneesRestantes.coerceAtMost(10)
+
             ajustementEnCours = true
-            swipeUneAnnee(rootNode, versLePasse = true)
-            handlerAnnee.postDelayed({ ajustementEnCours = false }, 350L)
+            nombreSwipesEffectues++
+            swipeAnnees(rootNode, anneesParGeste, versLePasse = true)
+            handlerAnnee.postDelayed({ ajustementEnCours = false }, 350L + anneesParGeste * 350L)
             return
         }
 
@@ -375,7 +401,7 @@ class FacebookAutomationHandler(private val service: AccessibilityService) {
             lineTo(centerX, yArrivee)
         }
         val geste = GestureDescription.Builder()
-            .addStroke(GestureDescription.StrokeDescription(chemin, 0, 120))
+            .addStroke(GestureDescription.StrokeDescription(chemin, 0, 350))
             .build()
 
         val resultat = service.dispatchGesture(geste, null, null)
