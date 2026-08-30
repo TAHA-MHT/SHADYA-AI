@@ -160,9 +160,10 @@ class FacebookAutomationHandler(private val service: AccessibilityService) {
             if (ajustementEnCours) return
 
             val anneeActuelle = lireAnneeAffichee()
+            journaliser("Lecture année=$anneeActuelle, derniereLectureStable=$derniereLectureStable, compteur=$lecturesIdentiquesConsecutives, cibleActuelle=$anneeCibleEnCours")
+
             if (anneeActuelle == null) {
-                // Impossible de lire l'année affichée : on valide telle
-                // quelle plutôt que de bloquer indéfiniment sur cet écran.
+                journaliser("Année illisible → clic SET par défaut")
                 performClick(setDateButtons.first())
                 return
             }
@@ -174,19 +175,23 @@ class FacebookAutomationHandler(private val service: AccessibilityService) {
             if (anneeActuelle != derniereLectureStable) {
                 derniereLectureStable = anneeActuelle
                 lecturesIdentiquesConsecutives = 1
+                journaliser("Valeur pas encore stable, on attend")
                 return
             }
             lecturesIdentiquesConsecutives++
             if (lecturesIdentiquesConsecutives < 2) {
+                journaliser("Première confirmation, on attend une deuxième")
                 return
             }
 
             if (anneeCibleEnCours == null) {
                 val ageVoulu = userData.age.toIntOrNull() ?: 20
                 anneeCibleEnCours = anneeActuelle - ageVoulu
+                journaliser("CIBLE CALCULÉE = $anneeCibleEnCours (base stable=$anneeActuelle, age=$ageVoulu, userData.age brut=\"${userData.age}\")")
             }
 
             if (anneeActuelle <= anneeCibleEnCours!!) {
+                journaliser("Cible atteinte ($anneeActuelle <= ${anneeCibleEnCours}) → clic SET")
                 anneeCibleEnCours = null
                 performClick(setDateButtons.first())
                 return
@@ -341,11 +346,16 @@ class FacebookAutomationHandler(private val service: AccessibilityService) {
     private fun swipeUneAnnee(rootNode: AccessibilityNodeInfo, versLePasse: Boolean): Boolean {
         val noeudsAnnees = mutableListOf<AccessibilityNodeInfo>()
         findToutesLesAnnees(rootNode, noeudsAnnees)
-        if (noeudsAnnees.isEmpty()) return false
+        journaliser("Swipe: ${noeudsAnnees.size} nœud(s) année trouvé(s), textes=${noeudsAnnees.map { it.text }}")
+        if (noeudsAnnees.isEmpty()) {
+            journaliser("Swipe annulé: aucun nœud année visible trouvé")
+            return false
+        }
 
         val zonesEcran = noeudsAnnees.map { noeud ->
             Rect().also { noeud.getBoundsInScreen(it) }
         }
+        journaliser("Swipe: bornes écran=${zonesEcran.map { "(${it.left},${it.top},${it.right},${it.bottom})" }}")
         val centresY = zonesEcran.map { it.centerY() }.sorted()
 
         // Espacement moyen entre deux rangées consécutives (ex : l'année du
@@ -358,6 +368,7 @@ class FacebookAutomationHandler(private val service: AccessibilityService) {
         val centerY = zonesEcran.first().centerY().toFloat()
         val yDepart = centerY
         val yArrivee = if (versLePasse) centerY + ecartMoyen else centerY - ecartMoyen
+        journaliser("Swipe: ecartMoyen=$ecartMoyen, centerX=$centerX, yDepart=$yDepart, yArrivee=$yArrivee")
 
         val chemin = Path().apply {
             moveTo(centerX, yDepart)
@@ -367,7 +378,23 @@ class FacebookAutomationHandler(private val service: AccessibilityService) {
             .addStroke(GestureDescription.StrokeDescription(chemin, 0, 120))
             .build()
 
-        return service.dispatchGesture(geste, null, null)
+        val resultat = service.dispatchGesture(geste, null, null)
+        journaliser("Swipe: dispatchGesture a retourné $resultat")
+        return resultat
+    }
+
+    // Écrit une ligne horodatée dans le même fichier crash_log.txt que celui
+    // déjà utilisé côté Dart (accessible via l'appui long sur le titre de
+    // l'app) — permet de voir les vraies valeurs lues et calculées à chaque
+    // étape, au lieu de deviner à partir du seul résultat visuel final.
+    private fun journaliser(message: String) {
+        try {
+            val fichier = java.io.File(service.filesDir, "crash_log.txt")
+            val horodatage = java.text.SimpleDateFormat("HH:mm:ss.SSS", java.util.Locale.FRANCE).format(java.util.Date())
+            fichier.appendText("[KOTLIN $horodatage] $message\n")
+        } catch (e: Exception) {
+            // Le journal est un outil de diagnostic, pas critique au flux.
+        }
     }
 
     // Lit l'année actuellement affichée en repartant de la fenêtre active à
@@ -392,5 +419,4 @@ class FacebookAutomationHandler(private val service: AccessibilityService) {
         }
         return null
     }
-}
-
+                    }
