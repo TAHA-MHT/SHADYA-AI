@@ -270,14 +270,15 @@ class FacebookAutomationHandler(private val service: AccessibilityService) {
     }
 
     // Recherche récursive d'un nœud dont le texte affiché correspond à une
-    // année plausible (1900-2099). Approche volontairement générique : elle
-    // ne suppose aucun type de composant précis (ex: NumberPicker), car
-    // certaines applications (dont Facebook) utilisent leur propre sélecteur
-    // de date personnalisé plutôt que le composant standard Android.
+    // année plausible (1900-2099), en ignorant tout nœud qui n'est pas
+    // réellement visible à l'écran (bornes de largeur/hauteur nulles) —
+    // ce type de composant (liste à défilement recyclée) conserve souvent
+    // des éléments hors écran en mémoire technique, avec un texte resté
+    // figé sur une ancienne valeur, ce qui faussait la lecture.
     private fun findNodeAvecAnnee(node: AccessibilityNodeInfo?): AccessibilityNodeInfo? {
         if (node == null) return null
         val texte = node.text?.toString()?.trim() ?: ""
-        if (Regex("^(19|20)\\d{2}$").matches(texte)) return node
+        if (Regex("^(19|20)\\d{2}$").matches(texte) && estReellementVisible(node)) return node
         for (i in 0 until node.childCount) {
             val trouve = findNodeAvecAnnee(node.getChild(i))
             if (trouve != null) return trouve
@@ -285,17 +286,26 @@ class FacebookAutomationHandler(private val service: AccessibilityService) {
         return null
     }
 
-    // Recherche récursive de TOUS les nœuds affichant une année plausible
-    // (utilisé pour repérer simultanément l'année du dessus, celle du
-    // milieu et celle du dessous, afin de mesurer l'espacement réel entre
-    // deux rangées consécutives du sélecteur).
+    // Recherche récursive de TOUS les nœuds affichant une année plausible et
+    // réellement visible à l'écran (voir remarque ci-dessus) — utilisé pour
+    // repérer simultanément l'année du dessus, celle du milieu et celle du
+    // dessous, afin de mesurer l'espacement réel entre deux rangées.
     private fun findToutesLesAnnees(node: AccessibilityNodeInfo?, resultat: MutableList<AccessibilityNodeInfo>) {
         if (node == null) return
         val texte = node.text?.toString()?.trim() ?: ""
-        if (Regex("^(19|20)\\d{2}$").matches(texte)) resultat.add(node)
+        if (Regex("^(19|20)\\d{2}$").matches(texte) && estReellementVisible(node)) resultat.add(node)
         for (i in 0 until node.childCount) {
             findToutesLesAnnees(node.getChild(i), resultat)
         }
+    }
+
+    // Vérifie qu'un nœud occupe réellement une zone visible à l'écran
+    // (largeur et hauteur non nulles), pour écarter les éléments hors écran
+    // ou recyclés en mémoire par les listes à défilement.
+    private fun estReellementVisible(node: AccessibilityNodeInfo): Boolean {
+        val zone = Rect()
+        node.getBoundsInScreen(zone)
+        return zone.width() > 0 && zone.height() > 0
     }
 
     // Simule un glissement du doigt d'exactement une rangée (une année),
