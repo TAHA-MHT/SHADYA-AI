@@ -444,6 +444,5 @@ class FacebookAutomationHandler(private val service: AccessibilityService) {
             if (trouve != null) return trouve
         }
         return null
-    }
-        }
-                    
+    }  
+}
