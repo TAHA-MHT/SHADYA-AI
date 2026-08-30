@@ -20,6 +20,17 @@ class FacebookAutomationHandler(private val service: AccessibilityService) {
     // et réinitialisée une fois la date validée.
     private var anneeCibleEnCours: Int? = null
 
+    // Stabilisation de la lecture initiale : la fenêtre "Set date" met un
+    // court instant à finir son animation d'ouverture. Calculer la cible
+    // à partir d'une lecture faite pendant cette animation donnait une
+    // valeur de départ incorrecte, sur laquelle tout le reste du calcul
+    // se basait ensuite fidèlement — d'où un atterrissage systématiquement
+    // faux malgré les corrections apportées à la mécanique de défilement.
+    // On attend donc deux lectures consécutives identiques avant de
+    // considérer la valeur comme fiable et de calculer la cible dessus.
+    private var derniereLectureStable: Int? = null
+    private var lecturesIdentiquesConsecutives: Int = 0
+
     // Verrou temporel : Android envoie souvent plusieurs événements
     // d'accessibilité très rapprochés pour un seul changement d'écran. Sans
     // ce verrou, chacun de ces événements déclenchait son propre geste de
@@ -86,6 +97,8 @@ class FacebookAutomationHandler(private val service: AccessibilityService) {
         val estEcranDateNaissance = setDateButtons.isNotEmpty() && cancelButtons.isNotEmpty()
         if (!estEcranDateNaissance) {
             anneeCibleEnCours = null
+            derniereLectureStable = null
+            lecturesIdentiquesConsecutives = 0
         }
 
         // Détection de fin de parcours : présence du fil d'actualité ou de la
@@ -151,6 +164,20 @@ class FacebookAutomationHandler(private val service: AccessibilityService) {
                 // Impossible de lire l'année affichée : on valide telle
                 // quelle plutôt que de bloquer indéfiniment sur cet écran.
                 performClick(setDateButtons.first())
+                return
+            }
+
+            // Tant que la valeur lue n'est pas confirmée stable (identique
+            // à la lecture précédente), on ne fait rien d'autre qu'observer
+            // — on évite ainsi de calculer la cible sur une valeur encore
+            // en cours d'animation d'ouverture de la fenêtre.
+            if (anneeActuelle != derniereLectureStable) {
+                derniereLectureStable = anneeActuelle
+                lecturesIdentiquesConsecutives = 1
+                return
+            }
+            lecturesIdentiquesConsecutives++
+            if (lecturesIdentiquesConsecutives < 2) {
                 return
             }
 
@@ -366,3 +393,4 @@ class FacebookAutomationHandler(private val service: AccessibilityService) {
         return null
     }
 }
+
