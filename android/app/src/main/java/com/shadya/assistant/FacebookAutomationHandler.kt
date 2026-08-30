@@ -445,4 +445,5 @@ class FacebookAutomationHandler(private val service: AccessibilityService) {
         }
         return null
     }
-                    }
+        }
+                    
