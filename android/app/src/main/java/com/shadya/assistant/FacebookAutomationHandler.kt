@@ -73,6 +73,21 @@ class FacebookAutomationHandler(private val service: AccessibilityService) {
     }
 
     private fun handleSignup(rootNode: AccessibilityNodeInfo) {
+        // Détection de l'écran "date de naissance" faite en tout premier,
+        // pour pouvoir réinitialiser la cible d'année mémorisée dès qu'on
+        // n'est PAS sur cet écran. Sans cette réinitialisation, une cible
+        // calculée lors d'un essai précédent resté inachevé (abandon en
+        // cours de route, redémarrage du parcours) restait figée en mémoire
+        // et polluait tous les essais suivants avec une valeur erronée,
+        // expliquant les atterrissages répétés sur la même année incorrecte
+        // malgré les corrections successives du mécanisme de défilement.
+        val setDateButtons = findNodesByText(rootNode, listOf("SET"))
+        val cancelButtons = findNodesByText(rootNode, listOf("CANCEL"))
+        val estEcranDateNaissance = setDateButtons.isNotEmpty() && cancelButtons.isNotEmpty()
+        if (!estEcranDateNaissance) {
+            anneeCibleEnCours = null
+        }
+
         // Détection de fin de parcours : présence du fil d'actualité ou de la
         // barre de navigation principale, signe que le compte est créé et que
         // Facebook est arrivé sur l'écran d'accueil. On désactive alors le
@@ -125,9 +140,7 @@ class FacebookAutomationHandler(private val service: AccessibilityService) {
         // en renvoyant sur ce même écran, provoquant une boucle infinie. On
         // fait donc défiler la molette de l'année vers le passé avant de
         // valider, pour obtenir un âge plausible (~20 ans) et adulte.
-        val setDateButtons = findNodesByText(rootNode, listOf("SET"))
-        val cancelButtons = findNodesByText(rootNode, listOf("CANCEL"))
-        if (setDateButtons.isNotEmpty() && cancelButtons.isNotEmpty()) {
+        if (estEcranDateNaissance) {
             // Si un geste précédent est encore "en pause de stabilisation",
             // on ignore cet événement plutôt que d'en déclencher un autre
             // par-dessus — c'est le cœur de la correction du saut massif.
