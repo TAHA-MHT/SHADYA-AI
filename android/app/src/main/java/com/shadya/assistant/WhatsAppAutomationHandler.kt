@@ -26,6 +26,15 @@ class WhatsAppAutomationHandler(private val service: AccessibilityService) {
     fun handleAccessibilityEvent(event: AccessibilityEvent) {
         val rootNode = service.rootInActiveWindow ?: return
 
+        // Garde-fou : n'agit que si la fenêtre active appartient réellement
+        // à WhatsApp. Sans cette vérification, un événement système déclenché
+        // à un autre moment (par exemple en fermant l'application) pouvait
+        // faire agir ce code sur une fenêtre totalement différente.
+        val packageActif = rootNode.packageName?.toString() ?: ""
+        if (packageActif != "com.whatsapp" && packageActif != "com.whatsapp.w4b") {
+            return
+        }
+
         // 1. Clic automatique sur "Accepter et continuer"
         val agreeButtons = findNodesByText(rootNode, listOf("Accepter et continuer", "Agree and continue", "AGREE AND CONTINUE"))
         if (agreeButtons.isNotEmpty()) {
@@ -43,11 +52,12 @@ class WhatsAppAutomationHandler(private val service: AccessibilityService) {
         }
 
         // 3. Validation automatique des boîtes de dialogue "OK" / "Oui"
-        val confirmButtons = findNodesByText(rootNode, listOf("OK", "Oui", "Yes"))
-        if (confirmButtons.isNotEmpty()) {
-            confirmButtons.first().performAction(AccessibilityNodeInfo.ACTION_CLICK)
-            return
-        }
+        // — retiré : ce texte étant très courant, il pouvait correspondre
+        // par coïncidence à un écran transitoire sans rapport (par exemple
+        // en fermant WhatsApp via un double appui sur Retour), déclenchant
+        // un clic non désiré à ce moment précis. Si ce type de dialogue doit
+        // être géré à nouveau, prévoir une condition plus spécifique (ex :
+        // présence simultanée d'un second élément propre à l'écran attendu).
 
         // 4. Code de vérification SMS — rempli automatiquement par SmsCodeReceiver
         // (voir ShadyaAgentService.pendingOtpCode), on se contente ici de le saisir si présent
