@@ -366,13 +366,16 @@ class FacebookAutomationHandler(private val service: AccessibilityService) {
         return zone.width() > 0 && zone.height() > 0
     }
 
-    // Simule un glissement du doigt d'exactement une rangée (une année),
-    // calibré sur l'espacement réel mesuré entre les années actuellement
-    // visibles à l'écran plutôt que sur une distance fixe supposée.
-    private fun swipeUneAnnee(rootNode: AccessibilityNodeInfo, versLePasse: Boolean): Boolean {
+    // Simule un glissement du doigt couvrant plusieurs rangées (années) en
+    // un seul geste continu, calibré sur l'espacement réel mesuré entre les
+    // années actuellement visibles à l'écran, avec une durée proportionnelle
+    // au nombre d'années parcourues pour conserver une vitesse mesurée et
+    // éviter l'effet d'élan ("fling") qui faisait sauter plus d'une rangée
+    // par geste lorsque celui-ci était trop rapide.
+    private fun swipeAnnees(rootNode: AccessibilityNodeInfo, nombreAnnees: Int, versLePasse: Boolean): Boolean {
         val noeudsAnnees = mutableListOf<AccessibilityNodeInfo>()
         findToutesLesAnnees(rootNode, noeudsAnnees)
-        journaliser("Swipe: ${noeudsAnnees.size} nœud(s) année trouvé(s), textes=${noeudsAnnees.map { it.text }}")
+        journaliser("Swipe: ${noeudsAnnees.size} nœud(s) année trouvé(s), textes=${noeudsAnnees.map { it.text }}, nombreAnnees=$nombreAnnees")
         if (noeudsAnnees.isEmpty()) {
             journaliser("Swipe annulé: aucun nœud année visible trouvé")
             return false
@@ -389,19 +392,21 @@ class FacebookAutomationHandler(private val service: AccessibilityService) {
         // seule année détectée), on retombe sur une valeur approximative.
         val ecarts = centresY.zipWithNext { a, b -> b - a }
         val ecartMoyen = if (ecarts.isNotEmpty()) ecarts.average().toInt() else 70
+        val distanceTotale = ecartMoyen * nombreAnnees
+        val dureeGeste = (350L * nombreAnnees).coerceAtMost(4000L)
 
         val centerX = zonesEcran.first().centerX().toFloat()
         val centerY = zonesEcran.first().centerY().toFloat()
         val yDepart = centerY
-        val yArrivee = if (versLePasse) centerY + ecartMoyen else centerY - ecartMoyen
-        journaliser("Swipe: ecartMoyen=$ecartMoyen, centerX=$centerX, yDepart=$yDepart, yArrivee=$yArrivee")
+        val yArrivee = if (versLePasse) centerY + distanceTotale else centerY - distanceTotale
+        journaliser("Swipe: ecartMoyen=$ecartMoyen, distanceTotale=$distanceTotale, dureeGeste=$dureeGeste, centerX=$centerX, yDepart=$yDepart, yArrivee=$yArrivee")
 
         val chemin = Path().apply {
             moveTo(centerX, yDepart)
             lineTo(centerX, yArrivee)
         }
         val geste = GestureDescription.Builder()
-            .addStroke(GestureDescription.StrokeDescription(chemin, 0, 350))
+            .addStroke(GestureDescription.StrokeDescription(chemin, 0, dureeGeste))
             .build()
 
         val resultat = service.dispatchGesture(geste, null, null)
@@ -445,6 +450,4 @@ class FacebookAutomationHandler(private val service: AccessibilityService) {
         }
         return null
     }
-                   
 }
-                    
