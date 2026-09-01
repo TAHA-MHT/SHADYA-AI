@@ -366,7 +366,14 @@ class FacebookAutomationHandler(private val service: AccessibilityService) {
         // seule année détectée), on retombe sur une valeur approximative.
         val ecarts = centresY.zipWithNext { a, b -> b - a }
         val ecartMoyen = if (ecarts.isNotEmpty()) ecarts.average().toInt() else 70
-        val distanceTotale = ecartMoyen * nombreAnnees
+
+        // Correction empirique : les mesures réelles (journal de diagnostic)
+        // montrent qu'un glissement calibré sur l'espacement mesuré entre
+        // deux rangées fait systématiquement avancer de deux années au lieu
+        // d'une seule, quelle que soit la vitesse du geste. On divise donc
+        // la distance par deux pour obtenir le déplacement d'une seule année.
+        val distanceParAnnee = ecartMoyen / 2
+        val distanceTotale = distanceParAnnee * nombreAnnees
         val dureeGeste = (350L * nombreAnnees).coerceAtMost(4000L)
 
         val centerX = zonesEcran.first().centerX().toFloat()
