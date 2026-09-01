@@ -21,17 +21,6 @@ class FacebookAutomationHandler(private val service: AccessibilityService) {
     // et réinitialisée une fois la date validée.
     private var anneeCibleEnCours: Int? = null
 
-    // Stabilisation de la lecture initiale : la fenêtre "Set date" met un
-    // court instant à finir son animation d'ouverture. Calculer la cible
-    // à partir d'une lecture faite pendant cette animation donnait une
-    // valeur de départ incorrecte, sur laquelle tout le reste du calcul
-    // se basait ensuite fidèlement — d'où un atterrissage systématiquement
-    // faux malgré les corrections apportées à la mécanique de défilement.
-    // On attend donc deux lectures consécutives identiques avant de
-    // considérer la valeur comme fiable et de calculer la cible dessus.
-    private var derniereLectureStable: Int? = null
-    private var lecturesIdentiquesConsecutives: Int = 0
-
     // Sécurité supplémentaire : nombre de gestes déjà effectués pour la
     // session en cours. Même avec un calibrage imparfait (risque de sauter
     // plus d'une année par geste sur certains appareils), ce compteur
@@ -106,8 +95,6 @@ class FacebookAutomationHandler(private val service: AccessibilityService) {
         val estEcranDateNaissance = setDateButtons.isNotEmpty() && cancelButtons.isNotEmpty()
         if (!estEcranDateNaissance) {
             anneeCibleEnCours = null
-            derniereLectureStable = null
-            lecturesIdentiquesConsecutives = 0
             nombreSwipesEffectues = 0
         }
 
@@ -170,27 +157,11 @@ class FacebookAutomationHandler(private val service: AccessibilityService) {
             if (ajustementEnCours) return
 
             val anneeActuelle = lireAnneeAffichee()
-            journaliser("Lecture année=$anneeActuelle, derniereLectureStable=$derniereLectureStable, compteur=$lecturesIdentiquesConsecutives, cibleActuelle=$anneeCibleEnCours")
+            journaliser("Lecture année=$anneeActuelle, cibleActuelle=$anneeCibleEnCours")
 
             if (anneeActuelle == null) {
                 journaliser("Année illisible → clic SET par défaut")
                 performClick(setDateButtons.first())
-                return
-            }
-
-            // Tant que la valeur lue n'est pas confirmée stable (identique
-            // à la lecture précédente), on ne fait rien d'autre qu'observer
-            // — on évite ainsi de calculer la cible sur une valeur encore
-            // en cours d'animation d'ouverture de la fenêtre.
-            if (anneeActuelle != derniereLectureStable) {
-                derniereLectureStable = anneeActuelle
-                lecturesIdentiquesConsecutives = 1
-                journaliser("Valeur pas encore stable, on attend")
-                return
-            }
-            lecturesIdentiquesConsecutives++
-            if (lecturesIdentiquesConsecutives < 2) {
-                journaliser("Première confirmation, on attend une deuxième")
                 return
             }
 
@@ -452,5 +423,5 @@ class FacebookAutomationHandler(private val service: AccessibilityService) {
             if (trouve != null) return trouve
         }
         return null
-    } 
+    }
 }
