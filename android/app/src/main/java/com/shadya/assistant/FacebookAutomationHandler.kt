@@ -195,19 +195,21 @@ class FacebookAutomationHandler(private val service: AccessibilityService) {
                 return
             }
 
-            // Un seul geste de glissement par appel : on laisse l'interface
-            // se rafraîchir avant de relire la valeur au prochain événement
-            // d'accessibilité. Le geste peut désormais avancer dans les deux
-            // sens (vers le passé ou vers le présent), au cas où la valeur
-            // de départ serait déjà, après un rejet de Facebook, plus
-            // ancienne que la cible visée.
+            // Un seul geste de glissement par appel, portant sur une seule
+            // année à la fois : le regroupement par lots (jusqu'à 10 années
+            // en un geste) donnait une distance qui variait de façon
+            // imprévisible selon la taille du lot (parfois trop courte,
+            // parfois trop longue), empêchant de tomber précisément sur la
+            // bonne année. Un geste par année, vérifié individuellement à
+            // chaque étape, est plus lent mais garantit d'atteindre
+            // exactement la cible.
             val versLePasse = difference > 0
-            val anneesParGeste = kotlin.math.abs(difference).coerceAtMost(10)
+            val anneesParGeste = 1
 
             ajustementEnCours = true
             nombreSwipesEffectues++
             swipeAnnees(rootNode, anneesParGeste, versLePasse = versLePasse)
-            handlerAnnee.postDelayed({ ajustementEnCours = false }, 350L + anneesParGeste * 350L)
+            handlerAnnee.postDelayed({ ajustementEnCours = false }, 200L)
             return
         }
 
@@ -374,7 +376,7 @@ class FacebookAutomationHandler(private val service: AccessibilityService) {
         // la distance par deux pour obtenir le déplacement d'une seule année.
         val distanceParAnnee = ecartMoyen / 2
         val distanceTotale = distanceParAnnee * nombreAnnees
-        val dureeGeste = (350L * nombreAnnees).coerceAtMost(4000L)
+        val dureeGeste = (130L * nombreAnnees).coerceAtMost(4000L)
 
         val centerX = zonesEcran.first().centerX().toFloat()
         val centerY = zonesEcran.first().centerY().toFloat()
