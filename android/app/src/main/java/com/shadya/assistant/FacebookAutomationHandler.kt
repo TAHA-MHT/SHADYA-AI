@@ -90,8 +90,15 @@ class FacebookAutomationHandler(private val service: AccessibilityService) {
         // et polluait tous les essais suivants avec une valeur erronée,
         // expliquant les atterrissages répétés sur la même année incorrecte
         // malgré les corrections successives du mécanisme de défilement.
-        val setDateButtons = findNodesByText(rootNode, listOf("SET"))
-        val cancelButtons = findNodesByText(rootNode, listOf("CANCEL"))
+        // Filtre sur le texte EXACT (pas seulement "contient"), car la
+        // recherche par texte est insensible à la casse et aux sous-chaînes :
+        // chercher "SET" trouvait aussi bien le vrai bouton que le titre de
+        // la fenêtre "Set date" (qui contient également "set"). Le code
+        // cliquait alors sur ce titre, non cliquable, expliquant pourquoi
+        // le clic échouait silencieusement en boucle malgré une cible
+        // correctement atteinte.
+        val setDateButtons = findNodesByText(rootNode, listOf("SET")).filter { it.text?.toString()?.trim() == "SET" }
+        val cancelButtons = findNodesByText(rootNode, listOf("CANCEL")).filter { it.text?.toString()?.trim() == "CANCEL" }
         val estEcranDateNaissance = setDateButtons.isNotEmpty() && cancelButtons.isNotEmpty()
         if (!estEcranDateNaissance) {
             anneeCibleEnCours = null
@@ -446,4 +453,3 @@ class FacebookAutomationHandler(private val service: AccessibilityService) {
         return null
     }
 }
-
