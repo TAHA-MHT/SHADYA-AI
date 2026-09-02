@@ -36,6 +36,7 @@ class ShadyaAgentBridge {
     String prenom = "",
     String nom = "",
     String age = "",
+    String genre = "",
   }) async {
     final motDePasseExistant = await ShadyaPasswordService.recupererMotDePasse(
       telephone: telephone,
@@ -49,6 +50,7 @@ class ShadyaAgentBridge {
         'phone': telephone,
         'password': motDePasseExistant,
         'age': age,
+        'gender': genre,
         'mode': 'login',
       });
       return null;
@@ -67,6 +69,7 @@ class ShadyaAgentBridge {
         'phone': telephone,
         'password': nouveauMotDePasse,
         'age': age,
+        'gender': genre,
         'mode': 'signup',
       });
 
@@ -188,12 +191,14 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
   // État du flux de création de compte Facebook en plusieurs étapes
   // null, "attente_nom", "attente_nom_famille", "attente_confirmation_nom",
   // "attente_telephone", "attente_confirmation_telephone",
-  // "attente_age", "attente_confirmation_age"
+  // "attente_age", "attente_confirmation_age",
+  // "attente_genre", "attente_confirmation_genre"
   String? _facebookEtape;
   String _facebookPrenomTemp = '';
   String _facebookNomTemp = '';
   String _facebookTelephoneTemp = '';
   String _facebookAgeTemp = '';
+  String _facebookGenreTemp = '';
 
   List<Contact> _contacts = [];
 
@@ -746,6 +751,19 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
     return null;
   }
 
+  // Extrait le genre dicté par l'utilisateur. Retourne "Male", "Female",
+  // ou null si non reconnu. Les valeurs retournées correspondent
+  // directement aux libellés affichés par Facebook (en anglais), pour une
+  // correspondance directe côté automatisation native.
+  String? _extraireGenre(String texte) {
+    final t = texte.toLowerCase();
+    const motsHomme = ['homme', 'masculin', 'garçon', 'garcon', 'male'];
+    const motsFemme = ['femme', 'féminin', 'feminin', 'fille', 'female'];
+    if (motsHomme.any((mot) => t.contains(mot))) return 'Male';
+    if (motsFemme.any((mot) => t.contains(mot))) return 'Female';
+    return null;
+  }
+
   // Détecte une confirmation positive ("oui", "correct", "exact"...).
   bool _estConfirmationPositive(String texte) {
     final t = texte.toLowerCase();
@@ -1014,12 +1032,10 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
 
     if (_facebookEtape == 'attente_confirmation_age') {
       if (_estConfirmationPositive(texte)) {
-        final telephone = _facebookTelephoneTemp;
-        final age = _facebookAgeTemp;
-        _facebookTelephoneTemp = '';
-        _facebookAgeTemp = '';
-        _facebookEtape = null;
-        await _finaliserFluxFacebook(telephone, age);
+        _facebookEtape = 'attente_genre';
+        const msg = "Es-tu un homme ou une femme ?";
+        setState(() => _recognizedText = "Shadya : $msg");
+        await _speak(msg);
         return true;
       }
 
@@ -1038,12 +1054,59 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
       return true;
     }
 
+    if (_facebookEtape == 'attente_genre') {
+      final genre = _extraireGenre(texte);
+
+      if (genre == null) {
+        const msg = "Je n'ai pas compris. Es-tu un homme ou une femme ?";
+        setState(() => _recognizedText = "Shadya : $msg");
+        await _speak(msg);
+        return true;
+      }
+
+      _facebookGenreTemp = genre;
+      _facebookEtape = 'attente_confirmation_genre';
+      final motDit = genre == 'Male' ? "un homme" : "une femme";
+      final msg = "Tu es $motDit, c'est correct ?";
+      setState(() => _recognizedText = "Shadya : $msg");
+      await _speak(msg);
+      return true;
+    }
+
+    if (_facebookEtape == 'attente_confirmation_genre') {
+      if (_estConfirmationPositive(texte)) {
+        final telephone = _facebookTelephoneTemp;
+        final age = _facebookAgeTemp;
+        final genre = _facebookGenreTemp;
+        _facebookTelephoneTemp = '';
+        _facebookAgeTemp = '';
+        _facebookGenreTemp = '';
+        _facebookEtape = null;
+        await _finaliserFluxFacebook(telephone, age, genre);
+        return true;
+      }
+
+      if (_estConfirmationNegative(texte)) {
+        _facebookGenreTemp = '';
+        _facebookEtape = 'attente_genre';
+        const msg = "D'accord. Es-tu un homme ou une femme ?";
+        setState(() => _recognizedText = "Shadya : $msg");
+        await _speak(msg);
+        return true;
+      }
+
+      const msg = "Dis oui ou non.";
+      setState(() => _recognizedText = "Shadya : $msg");
+      await _speak(msg);
+      return true;
+    }
+
     return false;
   }
 
   // Termine le flux Facebook : soumet les informations du compte via le
   // service d'accessibilité natif, puis ouvre l'application Facebook.
-  Future<void> _finaliserFluxFacebook(String telephone, String age) async {
+  Future<void> _finaliserFluxFacebook(String telephone, String age, String genre) async {
     setState(() => _recognizedText = "Shadya : Un instant.");
     await _speak("Un instant.");
 
@@ -1053,6 +1116,7 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
         prenom: _facebookPrenomTemp,
         nom: _facebookNomTemp,
         age: age,
+        genre: genre,
       );
 
       if (resultatCompte != null) {
