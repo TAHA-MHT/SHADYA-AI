@@ -118,6 +118,24 @@ class FacebookAutomationHandler(private val service: AccessibilityService) {
             return
         }
 
+        // Écran "What's your gender?" : sélectionne l'option correspondant
+        // au genre dicté par l'utilisateur ("Male" ou "Female"), en cherchant
+        // le texte exact du libellé (pas de recherche par sous-chaîne, pour
+        // éviter toute confusion avec un autre élément contenant ce mot).
+        // À défaut de genre fourni, retombe sur "Male" pour ne pas bloquer
+        // le parcours plutôt que de rester indéfiniment sur cet écran.
+        val demandeGenre = findNodesByText(rootNode, listOf("What's your gender?", "Quel est ton genre"))
+        if (demandeGenre.isNotEmpty()) {
+            val genreCible = if (userData.gender.equals("Female", ignoreCase = true)) "Female" else "Male"
+            val optionGenre = findNodesByText(rootNode, listOf(genreCible))
+                .filter { it.text?.toString()?.trim() == genreCible }
+            if (optionGenre.isNotEmpty()) {
+                performClick(optionGenre.first())
+                clickNextButton(rootNode)
+            }
+            return
+        }
+
         // Écran "Select your name" : Facebook rejette le nom saisi et propose
         // des variantes via des boutons radio (le nom exact varie et ne peut
         // pas être anticipé par une liste de textes candidats). On sélectionne
