@@ -29,6 +29,11 @@ class FacebookAutomationHandler(private val service: AccessibilityService) {
     // que de continuer à essayer sans fin.
     private var nombreSwipesEffectues: Int = 0
 
+    // Indique si l'option de genre a déjà été cliquée pour la session en
+    // cours, afin de séparer ce clic de celui sur "Next" (voir écran
+    // "What's your gender?" plus bas).
+    private var genreOptionCliquee: Boolean = false
+
     // Verrou temporel : Android envoie souvent plusieurs événements
     // d'accessibilité très rapprochés pour un seul changement d'écran. Sans
     // ce verrou, chacun de ces événements déclenchait son propre geste de
@@ -122,17 +127,30 @@ class FacebookAutomationHandler(private val service: AccessibilityService) {
         // au genre dicté par l'utilisateur ("Male" ou "Female"), en cherchant
         // le texte exact du libellé (pas de recherche par sous-chaîne, pour
         // éviter toute confusion avec un autre élément contenant ce mot).
-        // À défaut de genre fourni, retombe sur "Male" pour ne pas bloquer
-        // le parcours plutôt que de rester indéfiniment sur cet écran.
+        // Le clic sur l'option et le clic sur "Next" sont volontairement
+        // séparés en deux événements distincts : les faire dans le même
+        // appel provoquait un cliquetis en boucle sans jamais faire
+        // progresser l'écran, la sélection n'ayant pas le temps d'être
+        // enregistrée avant que "Next" ne soit lui-même cliqué.
         val demandeGenre = findNodesByText(rootNode, listOf("What's your gender?", "Quel est ton genre"))
-        if (demandeGenre.isNotEmpty()) {
+        if (demandeGenre.isEmpty()) {
+            genreOptionCliquee = false
+        } else {
             val genreCible = if (userData.gender.equals("Female", ignoreCase = true)) "Female" else "Male"
-            val optionGenre = findNodesByText(rootNode, listOf(genreCible))
-                .filter { it.text?.toString()?.trim() == genreCible }
-            if (optionGenre.isNotEmpty()) {
-                performClick(optionGenre.first())
-                clickNextButton(rootNode)
+
+            if (!genreOptionCliquee) {
+                val optionGenre = findNodesByText(rootNode, listOf(genreCible))
+                    .filter { it.text?.toString()?.trim() == genreCible }
+                if (optionGenre.isNotEmpty()) {
+                    performClick(optionGenre.first())
+                    genreOptionCliquee = true
+                }
+                return
             }
+
+            // L'option a déjà été cliquée lors d'un appel précédent : on
+            // valide maintenant avec "Next".
+            clickNextButton(rootNode)
             return
         }
 
