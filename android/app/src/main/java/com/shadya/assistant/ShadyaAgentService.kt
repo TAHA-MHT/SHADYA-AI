@@ -13,7 +13,11 @@ data class UserAccountData(
     // Âge dicté par l'utilisateur, utilisé pour calculer précisément
     // l'année de naissance à sélectionner sur l'écran "date of birth"
     // de Facebook (voir FacebookAutomationHandler.ajusterMoletteAnnee).
-    val age: String = ""
+    val age: String = "",
+    // Genre dicté par l'utilisateur ("Male" ou "Female"), utilisé pour
+    // sélectionner automatiquement la bonne option sur l'écran
+    // "What's your gender?" de Facebook.
+    val gender: String = ""
 )
 
 class ShadyaAgentService : AccessibilityService() {
