@@ -29,11 +29,6 @@ class FacebookAutomationHandler(private val service: AccessibilityService) {
     // que de continuer à essayer sans fin.
     private var nombreSwipesEffectues: Int = 0
 
-    // Indique si l'option de genre a déjà été cliquée pour la session en
-    // cours, afin de séparer ce clic de celui sur "Next" (voir écran
-    // "What's your gender?" plus bas).
-    private var genreOptionCliquee: Boolean = false
-
     // Verrou temporel : Android envoie souvent plusieurs événements
     // d'accessibilité très rapprochés pour un seul changement d'écran. Sans
     // ce verrou, chacun de ces événements déclenchait son propre geste de
@@ -124,43 +119,54 @@ class FacebookAutomationHandler(private val service: AccessibilityService) {
         }
 
         // Écran "What's your gender?" : sélectionne l'option correspondant
-        // au genre dicté par l'utilisateur ("Male" ou "Female"), en cherchant
-        // le texte exact du libellé (pas de recherche par sous-chaîne, pour
-        // éviter toute confusion avec un autre élément contenant ce mot).
-        // Le clic sur l'option et le clic sur "Next" sont volontairement
-        // séparés en deux événements distincts : les faire dans le même
-        // appel provoquait un cliquetis en boucle sans jamais faire
-        // progresser l'écran, la sélection n'ayant pas le temps d'être
-        // enregistrée avant que "Next" ne soit lui-même cliqué.
-        val demandeGenre = findNodesByText(rootNode, listOf("What's your gender?", "Quel est ton genre"))
-        if (demandeGenre.isEmpty()) {
-            genreOptionCliquee = false
-        } else {
+        // au genre dicté par l'utilisateur ("Male" ou "Female").
+        // Détection de l'écran via le fragment "your gender"/"ton genre"
+        // (SANS l'apostrophe de "What's"/"ton"), et non via la phrase
+        // complète : Facebook utilise une apostrophe typographique courbe
+        // (’) alors que le code cherchait une apostrophe droite (') — les
+        // deux caractères sont visuellement identiques mais différents pour
+        // une recherche de texte, donc "What's your gender?" ne correspondait
+        // jamais et cet écran passait inaperçu, expliquant pourquoi aucune
+        // tentative de clic sur Male/Female n'était jamais journalisée.
+        val demandeGenre = findNodesByText(rootNode, listOf("your gender", "ton genre", "votre genre"))
+        if (demandeGenre.isNotEmpty()) {
             val genreCible = if (userData.gender.equals("Female", ignoreCase = true)) "Female" else "Male"
+            val optionGenreTexte = findNodesByText(rootNode, listOf(genreCible))
+                .firstOrNull { it.text?.toString()?.trim() == genreCible }
 
-            if (!genreOptionCliquee) {
-                val optionGenre = findNodesByText(rootNode, listOf(genreCible))
-                    .filter { it.text?.toString()?.trim() == genreCible }
-
-                // DIAGNOSTIC TEMPORAIRE : avant de cliquer, on journalise la
-                // structure complète du nœud trouvé et de ses ancêtres
-                // (classe, cliquable, checkable, texte, contentDescription,
-                // bornes écran). Objectif : voir précisément quel élément
-                // reçoit le clic et pourquoi il ne sélectionne rien à l'écran.
-                // À retirer une fois le bug résolu.
-                if (optionGenre.isNotEmpty()) {
-                    journaliserArborescence(optionGenre.first(), genreCible)
-                    performClick(optionGenre.first())
-                    genreOptionCliquee = true
-                } else {
-                    journaliser("GENRE: aucun nœud texte exact trouvé pour \"$genreCible\"")
-                }
+            if (optionGenreTexte == null) {
+                journaliser("GENRE: aucun nœud texte exact trouvé pour \"$genreCible\"")
                 return
             }
 
-            // L'option a déjà été cliquée lors d'un appel précédent : on
-            // valide maintenant avec "Next".
-            clickNextButton(rootNode)
+            // DIAGNOSTIC : détaille la structure autour du nœud texte trouvé.
+            // Utile pour comprendre l'arborescence réelle si un nouveau cas
+            // de figure apparaît ; sans impact sur le comportement.
+            journaliserArborescence(optionGenreTexte, genreCible)
+
+            // Plutôt que de cliquer une seule fois puis d'espérer que la
+            // sélection a pris effet, on vérifie l'état réel (isChecked) de
+            // l'élément sélectionnable avant de continuer. Si ce n'est pas
+            // encore coché, on reclique — l'événement d'accessibilité suivant
+            // revérifiera l'état, garantissant qu'on ne passe à "Next" que
+            // lorsque l'option est effectivement sélectionnée, quel que soit
+            // le nombre de tentatives nécessaires.
+            val ancetreCheckable = trouverAncetreCheckable(optionGenreTexte)
+            if (ancetreCheckable != null) {
+                if (ancetreCheckable.isChecked) {
+                    journaliser("GENRE[$genreCible]: déjà sélectionné (checked=true) → clic Next")
+                    clickNextButton(rootNode)
+                } else {
+                    journaliser("GENRE[$genreCible]: pas encore sélectionné (checked=false) → clic sur l'ancêtre checkable")
+                    performClick(ancetreCheckable)
+                }
+            } else {
+                // Aucun ancêtre checkable détecté (structure inattendue) :
+                // on retombe sur un clic générique via le premier ancêtre
+                // cliquable, un seul essai par appel.
+                journaliser("GENRE[$genreCible]: aucun ancêtre checkable trouvé, clic générique sur le texte")
+                performClick(optionGenreTexte)
+            }
             return
         }
 
@@ -329,6 +335,23 @@ class FacebookAutomationHandler(private val service: AccessibilityService) {
             parent = parent.parent
             niveau++
         }
+    }
+
+    // Remonte l'arborescence depuis un nœud texte (ex: "Male"/"Female")
+    // jusqu'au premier ancêtre "checkable" (bouton radio, case à cocher, ou
+    // équivalent moderne). C'est cet ancêtre qui représente réellement
+    // l'option sélectionnable — cliquer sur le mauvais niveau (trop haut
+    // dans l'arborescence) est la cause la plus fréquente d'un clic qui
+    // "réussit" techniquement sans rien sélectionner visuellement.
+    private fun trouverAncetreCheckable(node: AccessibilityNodeInfo): AccessibilityNodeInfo? {
+        var courant: AccessibilityNodeInfo? = node
+        var niveau = 0
+        while (courant != null && niveau <= 6) {
+            if (courant.isCheckable) return courant
+            courant = courant.parent
+            niveau++
+        }
+        return null
     }
 
     // Clique sur le nœud, ou remonte vers le premier parent cliquable si le nœud
@@ -524,4 +547,3 @@ class FacebookAutomationHandler(private val service: AccessibilityService) {
         return null
     }
 }
-
