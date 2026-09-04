@@ -205,6 +205,30 @@ class FacebookAutomationHandler(private val service: AccessibilityService) {
             return
         }
 
+        // Écran "What's your email address?" : Facebook propose cet écran
+        // avec une alternative "Sign up with mobile number" — on privilégie
+        // systématiquement cette bascule vers le numéro de téléphone plutôt
+        // que de remplir un email (déjà disponible et fiable dans
+        // userData.phone, alors qu'un email généré risquerait d'être rejeté
+        // par Facebook). Sans cette détection, l'écran tombait dans le filet
+        // de sécurité générique en fin de fonction, qui recliquait "Next" en
+        // boucle sur le bouton désactivé (champ email vide obligatoire),
+        // provoquant un défilement erratique du clavier à l'écran.
+        val champsEmail = findFieldsByHint(rootNode, listOf("Email address", "Adresse e-mail", "E-mail address"))
+        if (champsEmail.isNotEmpty()) {
+            val boutonMobile = findNodesByText(rootNode, listOf(
+                "Sign up with mobile number", "S'inscrire avec un numéro de mobile",
+                "S'inscrire avec un numéro de téléphone"
+            ))
+            if (boutonMobile.isNotEmpty() && userData.phone.isNotEmpty()) {
+                journaliser("EMAIL: écran détecté → bascule vers inscription par numéro de mobile")
+                performClick(boutonMobile.first())
+            } else {
+                journaliser("EMAIL: écran détecté mais aucun bouton mobile disponible et/ou aucun numéro de téléphone en mémoire — en attente, aucune action pour éviter le clic aveugle sur Next")
+            }
+            return
+        }
+
         // Écran "What's your date of birth?" — la date affichée par défaut est
         // celle du jour même (âge 0 an), que Facebook rejette systématiquement
         // en renvoyant sur ce même écran, provoquant une boucle infinie. On
