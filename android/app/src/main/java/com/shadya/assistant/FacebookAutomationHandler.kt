@@ -436,7 +436,8 @@ class FacebookAutomationHandler(private val service: AccessibilityService) {
 
     private fun clickNextButton(rootNode: AccessibilityNodeInfo) {
         val nextButtons = findNodesByText(rootNode, listOf(
-            "Suivant", "Next", "S'inscrire", "Continue", "Sign up", "Sign Up"
+            "Suivant", "Next", "S'inscrire", "Continue", "Sign up", "Sign Up",
+            "I agree", "J'accepte"
         ))
         if (nextButtons.isNotEmpty()) {
             performClick(nextButtons.first())
