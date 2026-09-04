@@ -82,6 +82,12 @@ class FacebookAutomationHandler(private val service: AccessibilityService) {
     }
 
     private fun handleSignup(rootNode: AccessibilityNodeInfo) {
+        // MARQUEUR DE VERSION TEMPORAIRE : confirme que le code déployé sur
+        // le téléphone est bien la version corrigée (détection genre par
+        // "your gender" sans apostrophe + vérification isChecked). À
+        // retirer une fois la correction confirmée en usage réel.
+        journaliser("VERSION_ACTIVE = correctif-genre-v2")
+
         // Détection de l'écran "date de naissance" faite en tout premier,
         // pour pouvoir réinitialiser la cible d'année mémorisée dès qu'on
         // n'est PAS sur cet écran. Sans cette réinitialisation, une cible
@@ -118,26 +124,27 @@ class FacebookAutomationHandler(private val service: AccessibilityService) {
             return
         }
 
-        // Écran "What's your gender?" : sélectionne l'option correspondant
-        // au genre dicté par l'utilisateur ("Male" ou "Female").
-        // Détection de l'écran via le fragment "your gender"/"ton genre"
-        // (SANS l'apostrophe de "What's"/"ton"), et non via la phrase
-        // complète : Facebook utilise une apostrophe typographique courbe
-        // (’) alors que le code cherchait une apostrophe droite (') — les
-        // deux caractères sont visuellement identiques mais différents pour
-        // une recherche de texte, donc "What's your gender?" ne correspondait
-        // jamais et cet écran passait inaperçu, expliquant pourquoi aucune
-        // tentative de clic sur Male/Female n'était jamais journalisée.
-        val demandeGenre = findNodesByText(rootNode, listOf("your gender", "ton genre", "votre genre"))
-        if (demandeGenre.isNotEmpty()) {
-            val genreCible = if (userData.gender.equals("Female", ignoreCase = true)) "Female" else "Male"
-            val optionGenreTexte = findNodesByText(rootNode, listOf(genreCible))
-                .firstOrNull { it.text?.toString()?.trim() == genreCible }
+        // Écran "What's your gender?" : détecté par la présence simultanée
+        // des DEUX options "Male" et "Female" avec correspondance exacte de
+        // texte — plus fiable qu'une détection basée sur le titre de
+        // l'écran. Une première tentative de détection par titre ("your
+        // gender") a échoué (aucune ligne de diagnostic jamais journalisée
+        // malgré l'écran bien affiché à l'écran), ce qui indique que ce
+        // titre n'est probablement pas exposé comme un simple texte isolé
+        // dans l'arborescence d'accessibilité (texte combiné avec le
+        // sous-titre, contentDescription au lieu de text, etc.). Les options
+        // Male/Female, elles, sont les éléments qu'on cherche à cliquer de
+        // toute façon : les détecter directement élimine toute dépendance
+        // à un titre dont la structure réelle reste incertaine.
+        val optionMale = findNodesByText(rootNode, listOf("Male"))
+            .firstOrNull { it.text?.toString()?.trim() == "Male" }
+        val optionFemale = findNodesByText(rootNode, listOf("Female"))
+            .firstOrNull { it.text?.toString()?.trim() == "Female" }
+        val estEcranGenre = optionMale != null && optionFemale != null
 
-            if (optionGenreTexte == null) {
-                journaliser("GENRE: aucun nœud texte exact trouvé pour \"$genreCible\"")
-                return
-            }
+        if (estEcranGenre) {
+            val genreCible = if (userData.gender.equals("Female", ignoreCase = true)) "Female" else "Male"
+            val optionGenreTexte = if (genreCible == "Female") optionFemale!! else optionMale!!
 
             // DIAGNOSTIC : détaille la structure autour du nœud texte trouvé.
             // Utile pour comprendre l'arborescence réelle si un nouveau cas
@@ -532,6 +539,10 @@ class FacebookAutomationHandler(private val service: AccessibilityService) {
         val noeud = findNodeAvecAnnee(racine) ?: return null
         return noeud.text?.toString()?.trim()?.toIntOrNull()
     }
+
+    // DIAGNOSTIC : throttle pour éviter d'inonder le journal, puisque le
+    // fallback ci-dessous peut être appelé plusieurs fois par seconde.
+    private var derniereFoisDumpInconnu = 0L
 
     // Recherche récursive du premier bouton radio dans l'arborescence —
     // utilisé pour les écrans de choix (ex: sélection d'un nom suggéré),
