@@ -39,6 +39,13 @@ class FacebookAutomationHandler(private val service: AccessibilityService) {
     private var ajustementEnCours = false
     private val handlerAnnee = Handler(Looper.getMainLooper())
 
+    // Empreinte du dernier écran dont le contenu complet a été journalisé,
+    // utilisée pour éviter de ré-écrire le même dump à chaque événement
+    // d'accessibilité (qui peuvent arriver plusieurs fois par seconde sur
+    // un même écran figé) : on ne journalise le contenu détaillé qu'une
+    // seule fois par écran réellement différent.
+    private var derniereEmpreinteEcranJournalisee: Int? = null
+
     fun handleAccessibilityEvent(event: AccessibilityEvent) {
         val rootNode = service.rootInActiveWindow ?: return
 
@@ -82,12 +89,6 @@ class FacebookAutomationHandler(private val service: AccessibilityService) {
     }
 
     private fun handleSignup(rootNode: AccessibilityNodeInfo) {
-        // MARQUEUR DE VERSION TEMPORAIRE : confirme que le code déployé sur
-        // le téléphone est bien la version corrigée (détection genre par
-        // "your gender" sans apostrophe + vérification isChecked). À
-        // retirer une fois la correction confirmée en usage réel.
-        journaliser("VERSION_ACTIVE = correctif-genre-v2")
-
         // Détection de l'écran "date de naissance" faite en tout premier,
         // pour pouvoir réinitialiser la cible d'année mémorisée dès qu'on
         // n'est PAS sur cet écran. Sans cette réinitialisation, une cible
@@ -124,55 +125,48 @@ class FacebookAutomationHandler(private val service: AccessibilityService) {
             return
         }
 
-        // Écran "What's your gender?" : détecté par la présence simultanée
-        // des DEUX options "Male" et "Female" avec correspondance exacte de
-        // texte — plus fiable qu'une détection basée sur le titre de
-        // l'écran. Une première tentative de détection par titre ("your
-        // gender") a échoué (aucune ligne de diagnostic jamais journalisée
-        // malgré l'écran bien affiché à l'écran), ce qui indique que ce
-        // titre n'est probablement pas exposé comme un simple texte isolé
-        // dans l'arborescence d'accessibilité (texte combiné avec le
-        // sous-titre, contentDescription au lieu de text, etc.). Les options
-        // Male/Female, elles, sont les éléments qu'on cherche à cliquer de
-        // toute façon : les détecter directement élimine toute dépendance
-        // à un titre dont la structure réelle reste incertaine.
-        val optionMale = findNodesByText(rootNode, listOf("Male"))
-            .firstOrNull { it.text?.toString()?.trim() == "Male" }
-        val optionFemale = findNodesByText(rootNode, listOf("Female"))
-            .firstOrNull { it.text?.toString()?.trim() == "Female" }
+        // Écran "What's your gender?" : détection basée sur les nœuds
+        // "checkable" eux-mêmes (bouton radio ou équivalent), et non plus
+        // sur une recherche de texte classique. Deux tentatives précédentes
+        // ont échoué : d'abord via le titre complet de la question, puis
+        // via une recherche exacte du texte "Male"/"Female" — dans les deux
+        // cas, ZÉRO résultat, alors même que ces mots sont visiblement
+        // affichés à l'écran. Cela indique que Facebook utilise probablement
+        // une interface moderne (Jetpack Compose) qui fusionne le texte de
+        // l'option ("Male") avec son conteneur parent en un seul nœud
+        // d'accessibilité — le texte "Male" n'existe alors nulle part comme
+        // nœud séparé, seulement comme partie du texte/contentDescription du
+        // nœud "checkable" parent lui-même. On parcourt donc directement
+        // tous les nœuds checkable de l'écran et on regarde leur texte ET
+        // leur contentDescription combinés.
+        val optionsCheckables = mutableListOf<AccessibilityNodeInfo>()
+        trouverToutesLesOptionsCheckables(rootNode, optionsCheckables)
+        val optionFemale = optionsCheckables.firstOrNull { texteEtDescription(it).contains("Female", ignoreCase = true) }
+        val optionMale = optionsCheckables.firstOrNull {
+            texteEtDescription(it).contains("Male", ignoreCase = true) &&
+                !texteEtDescription(it).contains("Female", ignoreCase = true)
+        }
         val estEcranGenre = optionMale != null && optionFemale != null
 
         if (estEcranGenre) {
             val genreCible = if (userData.gender.equals("Female", ignoreCase = true)) "Female" else "Male"
-            val optionGenreTexte = if (genreCible == "Female") optionFemale!! else optionMale!!
+            val optionGenreNode = if (genreCible == "Female") optionFemale!! else optionMale!!
 
-            // DIAGNOSTIC : détaille la structure autour du nœud texte trouvé.
-            // Utile pour comprendre l'arborescence réelle si un nouveau cas
-            // de figure apparaît ; sans impact sur le comportement.
-            journaliserArborescence(optionGenreTexte, genreCible)
+            journaliser("GENRE[$genreCible]: noeud checkable trouvé, classe=${optionGenreNode.className}, texte=\"${optionGenreNode.text}\", desc=\"${optionGenreNode.contentDescription}\", checked=${optionGenreNode.isChecked}")
 
             // Plutôt que de cliquer une seule fois puis d'espérer que la
-            // sélection a pris effet, on vérifie l'état réel (isChecked) de
-            // l'élément sélectionnable avant de continuer. Si ce n'est pas
-            // encore coché, on reclique — l'événement d'accessibilité suivant
-            // revérifiera l'état, garantissant qu'on ne passe à "Next" que
-            // lorsque l'option est effectivement sélectionnée, quel que soit
-            // le nombre de tentatives nécessaires.
-            val ancetreCheckable = trouverAncetreCheckable(optionGenreTexte)
-            if (ancetreCheckable != null) {
-                if (ancetreCheckable.isChecked) {
-                    journaliser("GENRE[$genreCible]: déjà sélectionné (checked=true) → clic Next")
-                    clickNextButton(rootNode)
-                } else {
-                    journaliser("GENRE[$genreCible]: pas encore sélectionné (checked=false) → clic sur l'ancêtre checkable")
-                    performClick(ancetreCheckable)
-                }
+            // sélection a pris effet, on vérifie l'état réel (isChecked)
+            // avant de continuer. Si ce n'est pas encore coché, on reclique
+            // — l'événement d'accessibilité suivant revérifiera l'état,
+            // garantissant qu'on ne passe à "Next" que lorsque l'option est
+            // effectivement sélectionnée, quel que soit le nombre de
+            // tentatives nécessaires.
+            if (optionGenreNode.isChecked) {
+                journaliser("GENRE[$genreCible]: déjà sélectionné → clic Next")
+                clickNextButton(rootNode)
             } else {
-                // Aucun ancêtre checkable détecté (structure inattendue) :
-                // on retombe sur un clic générique via le premier ancêtre
-                // cliquable, un seul essai par appel.
-                journaliser("GENRE[$genreCible]: aucun ancêtre checkable trouvé, clic générique sur le texte")
-                performClick(optionGenreTexte)
+                journaliser("GENRE[$genreCible]: pas encore sélectionné → clic direct sur le nœud checkable")
+                performClick(optionGenreNode)
             }
             return
         }
@@ -313,52 +307,76 @@ class FacebookAutomationHandler(private val service: AccessibilityService) {
         // pouvait faire cliquer ce filet de sécurité sur un bouton "Next"/
         // "Continue" d'une app totalement différente, avec le risque de
         // ramener Facebook au premier plan de façon inattendue.
+        //
+        // DIAGNOSTIC : avant de cliquer à l'aveugle, on journalise le
+        // contenu textuel complet de l'écran — une seule fois par écran
+        // réellement différent (voir derniereEmpreinteEcranJournalisee).
+        // Objectif : ne plus jamais deviner à l'aveugle la structure d'un
+        // écran non reconnu (genre, ou tout autre écran futur du parcours) ;
+        // le prochain blocage sera immédiatement diagnosticable à partir de
+        // ce dump, sans aller-retour supplémentaire.
         val packageActif = rootNode.packageName?.toString() ?: ""
         if (packageActif == "com.facebook.katana" || packageActif == "com.facebook.lite") {
+            journaliserContenuEcranSiNouveau(rootNode)
             clickNextButton(rootNode)
         }
     }
 
-    // DIAGNOSTIC TEMPORAIRE : journalise le nœud texte trouvé pour l'option
-    // de genre, puis remonte toute la chaîne de ses ancêtres en notant pour
-    // chacun sa classe, s'il est cliquable/checkable, son texte, sa
-    // contentDescription et ses bornes écran. Permet de voir exactement
-    // quel ancêtre performClick() va finir par cliquer, et si cet ancêtre
-    // correspond réellement à la zone visuelle de l'option "Male"/"Female"
-    // ou s'il englobe une zone beaucoup plus large (bouton du mauvais
-    // niveau). À retirer une fois le bug résolu.
-    private fun journaliserArborescence(node: AccessibilityNodeInfo, genreCible: String) {
-        val zoneNoeud = Rect()
-        node.getBoundsInScreen(zoneNoeud)
-        journaliser("GENRE[$genreCible] noeud texte: classe=${node.className}, clicable=${node.isClickable}, checkable=${node.isCheckable}, checked=${node.isChecked}, texte=\"${node.text}\", desc=\"${node.contentDescription}\", bornes=(${zoneNoeud.left},${zoneNoeud.top},${zoneNoeud.right},${zoneNoeud.bottom})")
+    // Concatène le texte et la contentDescription d'un nœud, séparés par un
+    // espace, pour permettre une recherche unique qui couvre les deux
+    // propriétés — utile face à des interfaces (Jetpack Compose notamment)
+    // où le libellé visible peut se trouver dans l'une ou l'autre selon la
+    // façon dont le composant a été construit.
+    private fun texteEtDescription(node: AccessibilityNodeInfo): String {
+        return ((node.text?.toString() ?: "") + " " + (node.contentDescription?.toString() ?: "")).trim()
+    }
 
-        var parent = node.parent
-        var niveau = 1
-        while (parent != null && niveau <= 6) {
-            val zone = Rect()
-            parent.getBoundsInScreen(zone)
-            val supporteClic = parent.isClickable || parent.actionList.any { it.id == AccessibilityNodeInfo.ACTION_CLICK }
-            journaliser("GENRE[$genreCible] ancêtre niveau $niveau: classe=${parent.className}, clicable=$supporteClic, checkable=${parent.isCheckable}, checked=${parent.isChecked}, texte=\"${parent.text}\", desc=\"${parent.contentDescription}\", bornes=(${zone.left},${zone.top},${zone.right},${zone.bottom})")
-            parent = parent.parent
-            niveau++
+    // Recherche récursive de TOUS les nœuds "checkable" (boutons radio,
+    // cases à cocher, ou équivalents modernes) de l'arborescence — utilisé
+    // pour détecter les écrans à choix (comme "What's your gender?") sans
+    // dépendre d'une recherche de texte classique, qui peut échouer si le
+    // libellé est fusionné avec son conteneur par le framework d'interface.
+    private fun trouverToutesLesOptionsCheckables(node: AccessibilityNodeInfo?, resultat: MutableList<AccessibilityNodeInfo>) {
+        if (node == null) return
+        if (node.isCheckable) resultat.add(node)
+        for (i in 0 until node.childCount) {
+            trouverToutesLesOptionsCheckables(node.getChild(i), resultat)
         }
     }
 
-    // Remonte l'arborescence depuis un nœud texte (ex: "Male"/"Female")
-    // jusqu'au premier ancêtre "checkable" (bouton radio, case à cocher, ou
-    // équivalent moderne). C'est cet ancêtre qui représente réellement
-    // l'option sélectionnable — cliquer sur le mauvais niveau (trop haut
-    // dans l'arborescence) est la cause la plus fréquente d'un clic qui
-    // "réussit" techniquement sans rien sélectionner visuellement.
-    private fun trouverAncetreCheckable(node: AccessibilityNodeInfo): AccessibilityNodeInfo? {
-        var courant: AccessibilityNodeInfo? = node
-        var niveau = 0
-        while (courant != null && niveau <= 6) {
-            if (courant.isCheckable) return courant
-            courant = courant.parent
-            niveau++
+    // DIAGNOSTIC : parcourt tout l'arbre d'accessibilité et journalise
+    // chaque nœud portant un texte ou une contentDescription non vide
+    // (classe, cliquable, checkable, checked, texte, description, bornes).
+    // Ne journalise qu'une seule fois par écran réellement différent grâce
+    // à une empreinte calculée sur l'ensemble des textes trouvés, pour
+    // éviter de saturer le journal quand le même écran reçoit plusieurs
+    // événements d'accessibilité rapprochés.
+    private fun journaliserContenuEcranSiNouveau(rootNode: AccessibilityNodeInfo) {
+        val lignes = mutableListOf<String>()
+        collecterContenuTexte(rootNode, lignes)
+        val empreinte = lignes.joinToString("|").hashCode()
+        if (empreinte == derniereEmpreinteEcranJournalisee) return
+        derniereEmpreinteEcranJournalisee = empreinte
+
+        journaliser("=== DUMP ÉCRAN NON RECONNU (${lignes.size} nœud(s) avec texte) ===")
+        for (ligne in lignes) {
+            journaliser(ligne)
         }
-        return null
+        journaliser("=== FIN DUMP ===")
+    }
+
+    private fun collecterContenuTexte(node: AccessibilityNodeInfo?, resultat: MutableList<String>) {
+        if (node == null) return
+        val texte = node.text?.toString()
+        val description = node.contentDescription?.toString()
+        if (!texte.isNullOrBlank() || !description.isNullOrBlank()) {
+            val zone = Rect()
+            node.getBoundsInScreen(zone)
+            resultat.add("classe=${node.className}, clicable=${node.isClickable}, checkable=${node.isCheckable}, checked=${node.isChecked}, texte=\"$texte\", desc=\"$description\", bornes=(${zone.left},${zone.top},${zone.right},${zone.bottom})")
+        }
+        for (i in 0 until node.childCount) {
+            collecterContenuTexte(node.getChild(i), resultat)
+        }
     }
 
     // Clique sur le nœud, ou remonte vers le premier parent cliquable si le nœud
