@@ -1,12 +1,1 @@
-<?xml version="1.0" encoding="utf-8"?>
-<accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
-    android:accessibilityEventTypes="typeAllMask"
-    android:accessibilityFeedbackType="feedbackGeneric"
-    android:accessibilityFlags="flagDefault|flagRetrieveInteractiveWindows|flagIncludeNotImportantViews|flagReportViewIds"
-    android:canRetrieveWindowContent="true"
-    android:canPerformGestures="true"
-    android:canRequestFilterKeyEvents="false"
-    android:notificationTimeout="100"
-    android:description="@string/accessibility_service_description"
-    android:settingsActivity="com.shadyaai.app.MainActivity"
-    android:packageNames="com.google.android.youtube,com.android.chrome,cn.xender,com.google.android.apps.translate,com.android.vending,com.openai.chatgpt,com.alibaba.aliexpresshd,com.anthropic.claude,com.google.android.apps.bard,org.goldenquran.freesoft,com.xe.currency,com.desn.ffb.lihangzhixing,com.whatsapp,com.google.android.gm,com.facebook.katana,com.facebook.lite,com.instagram.android" />
+
