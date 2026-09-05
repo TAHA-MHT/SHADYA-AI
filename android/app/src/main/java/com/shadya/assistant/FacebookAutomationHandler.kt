@@ -60,6 +60,12 @@ class FacebookAutomationHandler(private val service: AccessibilityService) {
     // le clic de secours trop tôt gênerait un envoi simplement un peu lent.
     private val delaiMaxAttenteCodeMs = 90_000L
 
+    // Évite de journaliser en boucle le même refus Facebook (numéro déjà
+    // utilisé) à chaque événement d'accessibilité tant que l'écran reste
+    // affiché — une seule ligne de log suffit, le reste du temps on se
+    // contente d'attendre sans agir.
+    private var erreurNumeroDejaSignalee = false
+
     fun handleAccessibilityEvent(event: AccessibilityEvent) {
         val rootNode = service.rootInActiveWindow ?: return
 
@@ -156,6 +162,17 @@ class FacebookAutomationHandler(private val service: AccessibilityService) {
         val estEcranCodeConfirmation = findFieldsByHint(rootNode, listOf("Confirmation code", "Code de confirmation")).isNotEmpty()
         if (!estEcranCodeConfirmation) {
             horodatageDebutAttenteCode = null
+        }
+
+        // Réinitialise le drapeau de signalement du refus "numéro déjà
+        // utilisé" dès qu'on n'est plus sur cet écran d'erreur — permet de
+        // re-signaler proprement si la même erreur survient à nouveau plus
+        // tard avec un autre numéro.
+        val estEcranErreurNumero = findNodesByText(rootNode, listOf(
+            "used to verify a different account", "déjà utilisé pour vérifier un autre compte"
+        )).isNotEmpty()
+        if (!estEcranErreurNumero) {
+            erreurNumeroDejaSignalee = false
         }
 
         // Détection de fin de parcours : présence du fil d'actualité ou de la
@@ -402,6 +419,27 @@ class FacebookAutomationHandler(private val service: AccessibilityService) {
             fillTextField(firstNameFields.first(), userData.firstName)
             fillTextField(lastNameFields.first(), userData.lastName)
             clickNextButton(rootNode)
+            return
+        }
+
+        // Erreur Facebook "numéro déjà utilisé pour un autre compte" : ce
+        // n'est pas un bug côté Shadya mais un vrai refus de Facebook,
+        // fréquent en phase de test quand le même numéro sert à plusieurs
+        // tentatives de création de compte rapprochées. Sans cette
+        // détection, le code continuait à reremplir le champ et à recliquer
+        // "Next" à chaque événement sur un numéro que Facebook refusera
+        // systématiquement — provoquant un rafraîchissement d'écran erratique
+        // et sans issue. On arrête net les tentatives automatiques et on
+        // journalise une seule fois (throttlé), en attendant qu'un numéro
+        // différent soit fourni manuellement.
+        val erreurNumeroDejaUtilise = findNodesByText(rootNode, listOf(
+            "used to verify a different account", "déjà utilisé pour vérifier un autre compte"
+        )).isNotEmpty()
+        if (erreurNumeroDejaUtilise) {
+            if (!erreurNumeroDejaSignalee) {
+                journaliser("TELEPHONE: Facebook refuse ce numéro (déjà utilisé pour un autre compte) — arrêt des tentatives automatiques, un numéro différent est nécessaire")
+                erreurNumeroDejaSignalee = true
+            }
             return
         }
 
