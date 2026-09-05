@@ -532,13 +532,31 @@ class FacebookAutomationHandler(private val service: AccessibilityService) {
         node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, arguments)
     }
 
+    // Clique sur un bouton "suivant"/"soumettre" générique parmi plusieurs
+    // libellés candidats — avec correspondance EXACTE (texte OU
+    // contentDescription), pas une simple sous-chaîne. Bug réel corrigé ici :
+    // le mot-clé "Sign up" est une sous-chaîne littérale de "Sign up with
+    // mobile number" ET de "Sign up with email address" (les deux boutons de
+    // bascule entre méthodes d'inscription) ; avec une recherche par
+    // sous-chaîne, clickNextButton() finissait donc par cliquer l'un ou
+    // l'autre de ces boutons de bascule à la place du vrai bouton de
+    // soumission, provoquant une oscillation infinie entre les deux écrans
+    // (email ↔ mobile) sans jamais progresser. Un match exact élimine ce
+    // risque, ici et pour tout futur libellé qui contiendrait par coïncidence
+    // l'un de ces mots-clés.
     private fun clickNextButton(rootNode: AccessibilityNodeInfo) {
-        val nextButtons = findNodesByText(rootNode, listOf(
+        val libellesRecherches = listOf(
             "Suivant", "Next", "S'inscrire", "Continue", "Sign up", "Sign Up",
             "I agree", "J'accepte"
-        ))
-        if (nextButtons.isNotEmpty()) {
-            performClick(nextButtons.first())
+        )
+        val candidats = findNodesByText(rootNode, libellesRecherches)
+        val boutonExact = candidats.firstOrNull { noeud ->
+            val texte = noeud.text?.toString()?.trim()
+            val description = noeud.contentDescription?.toString()?.trim()
+            libellesRecherches.any { it.equals(texte, ignoreCase = true) || it.equals(description, ignoreCase = true) }
+        }
+        if (boutonExact != null) {
+            performClick(boutonExact)
         }
     }
 
@@ -699,4 +717,3 @@ class FacebookAutomationHandler(private val service: AccessibilityService) {
         return null
     }
 }
-
