@@ -234,6 +234,49 @@ class FacebookAutomationHandler(private val service: AccessibilityService) {
             return
         }
 
+        // Écran "You might already have a Facebook account" : Facebook
+        // propose de se connecter à un compte existant partageant le même
+        // numéro. On clique systématiquement sur "Continue creating account"
+        // pour poursuivre la création d'un NOUVEAU compte — jamais sur
+        // "Yes, log in as ..." qui connecterait à l'ancien compte à la place.
+        val boutonContinuerCreation = findNodesByText(rootNode, listOf(
+            "Continue creating account", "Continuer la création du compte"
+        )).firstOrNull { noeud ->
+            val texte = noeud.text?.toString()?.trim()
+            val description = noeud.contentDescription?.toString()?.trim()
+            texte == "Continue creating account" || description == "Continue creating account" ||
+                texte == "Continuer la création du compte" || description == "Continuer la création du compte"
+        }
+        if (boutonContinuerCreation != null) {
+            journaliser("COMPTE EXISTANT: écran détecté → clic sur 'Continue creating account' pour poursuivre la création")
+            performClick(boutonContinuerCreation)
+            return
+        }
+
+        // Écran "Add a profile picture" : l'automatisation ne peut pas
+        // fournir de photo, donc on clique systématiquement sur "Skip".
+        // Nécessite une correspondance EXACTE sur "Skip" (pas seulement sa
+        // présence) car ce bouton partage son libellé avec le popup "Choose
+        // an email address..." plus haut, qui lui a une logique différente
+        // (nécessite un bouton "OK" en plus).
+        val demandePhotoProfil = findNodesByText(rootNode, listOf(
+            "Add a profile picture", "Ajoutez une photo de profil"
+        )).isNotEmpty()
+        if (demandePhotoProfil) {
+            val boutonSkipPhoto = findNodesByText(rootNode, listOf("Skip", "Ignorer")).firstOrNull { noeud ->
+                val texte = noeud.text?.toString()?.trim()
+                val description = noeud.contentDescription?.toString()?.trim()
+                texte == "Skip" || description == "Skip" || texte == "Ignorer" || description == "Ignorer"
+            }
+            if (boutonSkipPhoto != null) {
+                journaliser("PHOTO PROFIL: écran détecté → clic sur Skip")
+                performClick(boutonSkipPhoto)
+            } else {
+                journaliser("PHOTO PROFIL: écran détecté mais bouton Skip introuvable")
+            }
+            return
+        }
+
         // Écran "Select your name" : Facebook rejette le nom saisi et propose
         // des variantes via des boutons radio (le nom exact varie et ne peut
         // pas être anticipé par une liste de textes candidats). On sélectionne
