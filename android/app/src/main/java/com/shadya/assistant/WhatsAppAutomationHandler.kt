@@ -67,6 +67,7 @@ class WhatsAppAutomationHandler(private val service: AccessibilityService) {
         if (codeFields.isNotEmpty() && ShadyaAgentService.pendingOtpCode.isNotEmpty()) {
             journaliser("WHATSAPP: champ code détecté, remplissage avec le code en mémoire")
             fillTextField(codeFields.first(), ShadyaAgentService.pendingOtpCode)
+            ShadyaAgentService.pendingOtpCode = ""
             return
         }
 
@@ -78,6 +79,24 @@ class WhatsAppAutomationHandler(private val service: AccessibilityService) {
             fillTextField(nameFields.first(), nomComplet)
             clickNextButton(rootNode)
             return
+        }
+    }
+
+    // Appelée directement par ShadyaAgentService dès qu'un code de
+    // vérification à 5 chiffres est détecté dans une notification SMS ou
+    // WhatsApp — permet de remplir le champ immédiatement, sans attendre le
+    // prochain événement d'accessibilité naturel. Symétrique de la méthode
+    // équivalente dans FacebookAutomationHandler, aiguillée correctement
+    // via ShadyaAgentService.pendingFlowTarget.
+    fun tenterRemplirCodeConfirmation(code: String) {
+        val rootNode = service.rootInActiveWindow ?: return
+        val codeFields = findFieldsByHint(rootNode, listOf("code de vérification", "verification code", "Code"))
+        if (codeFields.isNotEmpty()) {
+            journaliser("WHATSAPP: code reçu par notification ($code) → remplissage immédiat du champ")
+            fillTextField(codeFields.first(), code)
+            ShadyaAgentService.pendingOtpCode = ""
+        } else {
+            journaliser("WHATSAPP: code reçu ($code) mais champ introuvable à cet instant — mémorisé pour le prochain écran")
         }
     }
 
@@ -184,4 +203,3 @@ class WhatsAppAutomationHandler(private val service: AccessibilityService) {
         }
     }
 }
-
