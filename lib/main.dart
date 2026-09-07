@@ -216,6 +216,15 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
   String _facebookAgeTemp = '';
   String _facebookGenreTemp = '';
 
+  // État du flux de création de compte WhatsApp Business en plusieurs
+  // étapes, sur le même principe que le flux Facebook mais plus court
+  // (WhatsApp ne demande qu'un nom de profil et un numéro de téléphone).
+  // null, "attente_nom", "attente_confirmation_nom",
+  // "attente_telephone", "attente_confirmation_telephone"
+  String? _whatsappEtape;
+  String _whatsappNomTemp = '';
+  String _whatsappTelephoneTemp = '';
+
   List<Contact> _contacts = [];
 
   static const String _sherpaModelDirName = 'vosk-model-small-fr-0.22';
@@ -1120,6 +1129,170 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
     return false;
   }
 
+  // Gère le flux WhatsApp Business en plusieurs étapes, sur le même
+  // principe que _gererFluxFacebook mais plus court (nom + téléphone
+  // uniquement). Retourne true si le texte a été traité dans ce cadre.
+  Future<bool> _gererFluxWhatsApp(String texte) async {
+    if (_whatsappEtape == null) return false;
+
+    final texteAnnulation = texte.toLowerCase();
+    if (texteAnnulation.contains('annule') || texteAnnulation.contains('stop') || texteAnnulation.contains('recommence')) {
+      _whatsappEtape = null;
+      _whatsappNomTemp = '';
+      _whatsappTelephoneTemp = '';
+      const msg = "D'accord, j'annule.";
+      setState(() => _recognizedText = "Shadya : $msg");
+      await _speak(msg);
+      return true;
+    }
+
+    if (_whatsappEtape == 'attente_nom') {
+      final motsTexte = texte.trim().split(RegExp(r'\s+')).where((m) => m.isNotEmpty).toList();
+      if (motsTexte.isEmpty) {
+        const msg = "Je n'ai pas entendu. Répète ton nom.";
+        setState(() => _recognizedText = "Shadya : $msg");
+        await _speak(msg);
+        return true;
+      }
+
+      _whatsappNomTemp = motsTexte.map((m) => m.isEmpty ? m : m[0].toUpperCase() + m.substring(1).toLowerCase()).join(' ');
+      _whatsappEtape = 'attente_confirmation_nom';
+      final msg = "$_whatsappNomTemp, c'est correct ?";
+      setState(() => _recognizedText = "Shadya : $msg");
+      await _speak(msg);
+      return true;
+    }
+
+    if (_whatsappEtape == 'attente_confirmation_nom') {
+      if (_estConfirmationPositive(texte)) {
+        _whatsappEtape = 'attente_telephone';
+        const msg = "Dis ton numéro de téléphone.";
+        setState(() => _recognizedText = "Shadya : $msg");
+        await _speak(msg);
+        return true;
+      }
+
+      if (_estConfirmationNegative(texte)) {
+        _whatsappNomTemp = '';
+        _whatsappEtape = 'attente_nom';
+        const msg = "D'accord. Dis ton nom.";
+        setState(() => _recognizedText = "Shadya : $msg");
+        await _speak(msg);
+        return true;
+      }
+
+      const msg = "Dis oui ou non.";
+      setState(() => _recognizedText = "Shadya : $msg");
+      await _speak(msg);
+      return true;
+    }
+
+    if (_whatsappEtape == 'attente_telephone') {
+      if (_estDemandeEffacement(texte)) {
+        if (_whatsappTelephoneTemp.isNotEmpty) {
+          _whatsappTelephoneTemp = _whatsappTelephoneTemp.substring(0, _whatsappTelephoneTemp.length - 1);
+        }
+        final msg = _whatsappTelephoneTemp.isEmpty
+            ? "Effacé. Continue."
+            : "Effacé. $_whatsappTelephoneTemp. Continue.";
+        setState(() => _recognizedText = "Shadya : $msg");
+        await _speak(msg);
+        return true;
+      }
+
+      final chiffres = _extraireChiffresBruts(texte);
+      _whatsappTelephoneTemp += chiffres;
+
+      if (_whatsappTelephoneTemp.length > 15) {
+        _whatsappTelephoneTemp = _whatsappTelephoneTemp.substring(0, 15);
+      }
+
+      final finDemandee = _estFinNumero(texte);
+
+      if (!finDemandee) {
+        final msg = _whatsappTelephoneTemp.isEmpty
+            ? "Je n'ai pas entendu. Continue."
+            : "$_whatsappTelephoneTemp. Continue, ou dis terminé.";
+        setState(() => _recognizedText = "Shadya : $msg");
+        await _speak(msg);
+        return true;
+      }
+
+      if (_whatsappTelephoneTemp.length < 6) {
+        const msg = "Numéro trop court. Continue.";
+        setState(() => _recognizedText = "Shadya : $msg");
+        await _speak(msg);
+        return true;
+      }
+
+      _whatsappEtape = 'attente_confirmation_telephone';
+      final msg = "$_whatsappTelephoneTemp, c'est correct ?";
+      setState(() => _recognizedText = "Shadya : $msg");
+      await _speak(msg);
+      return true;
+    }
+
+    if (_whatsappEtape == 'attente_confirmation_telephone') {
+      if (_estConfirmationPositive(texte)) {
+        final nom = _whatsappNomTemp;
+        final telephone = _whatsappTelephoneTemp;
+        _whatsappNomTemp = '';
+        _whatsappTelephoneTemp = '';
+        _whatsappEtape = null;
+        await _finaliserFluxWhatsApp(nom, telephone);
+        return true;
+      }
+
+      if (_estConfirmationNegative(texte)) {
+        _whatsappTelephoneTemp = '';
+        _whatsappEtape = 'attente_telephone';
+        const msg = "D'accord. Redis ton numéro.";
+        setState(() => _recognizedText = "Shadya : $msg");
+        await _speak(msg);
+        return true;
+      }
+
+      const msg = "Dis oui ou non.";
+      setState(() => _recognizedText = "Shadya : $msg");
+      await _speak(msg);
+      return true;
+    }
+
+    return false;
+  }
+
+  // Termine le flux WhatsApp Business : transmet le nom et le numéro au
+  // service natif (cible "whatsapp" pour l'aiguillage correct du futur code
+  // de vérification), puis lance l'application WhatsApp Business.
+  Future<void> _finaliserFluxWhatsApp(String nom, String telephone) async {
+    setState(() => _recognizedText = "Shadya : Un instant.");
+    await _speak("Un instant.");
+
+    try {
+      await ShadyaAgentBridge.platform.invokeMethod('setUserAccountData', {
+        'firstName': nom,
+        'lastName': '',
+        'phone': telephone,
+        'password': '',
+        'age': '',
+        'gender': '',
+        'mode': 'signup',
+        'target': 'whatsapp',
+      });
+    } catch (e, stack) {
+      await _ecrireCrashLog('Erreur setUserAccountData WhatsApp: $e\n$stack');
+    }
+
+    await ShadyaAgentBridge.activerFluxAndroid();
+
+    final resultatLancement = await ShadyaAgentBridge.lancerApplication('com.whatsapp.w4b');
+    if (!resultatLancement) {
+      const msg = "WhatsApp Business ne semble pas installé.";
+      setState(() => _recognizedText = "Shadya : $msg");
+      await _speak(msg);
+    }
+  }
+
   // Termine le flux Facebook : soumet les informations du compte via le
   // service d'accessibilité natif, puis ouvre l'application Facebook.
   Future<void> _finaliserFluxFacebook(String telephone, String age, String genre) async {
@@ -1192,6 +1365,18 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
       // par le système, pas par Facebook lui-même) soit pris en charge.
       await ShadyaAgentBridge.activerFluxAndroid();
       await _speak("D'accord. Dis ton prénom et ton nom.");
+      return true;
+    }
+
+    // Cas spécial WhatsApp Business : démarre le flux séquentiel (nom, puis
+    // téléphone), sur le même principe que Facebook. Vérifié AVANT la
+    // correspondance générique "whatsapp" plus bas, car cette dernière
+    // matcherait aussi la phrase "whatsapp business" par sous-chaîne.
+    if (texteMinuscule.contains('whatsapp business')) {
+      _whatsappEtape = 'attente_nom';
+      _whatsappTelephoneTemp = '';
+      await ShadyaAgentBridge.activerFluxAndroid();
+      await _speak("D'accord. Dis ton nom.");
       return true;
     }
 
@@ -1663,6 +1848,10 @@ class _VoiceHomeScreenState extends State<VoiceHomeScreen> {
     // Priorité au flux Facebook en cours, s'il y en a un
     final fluxFacebookTraite = await _gererFluxFacebook(texteEntendu);
     if (fluxFacebookTraite) return;
+
+    // Priorité au flux WhatsApp Business en cours, s'il y en a un
+    final fluxWhatsAppTraite = await _gererFluxWhatsApp(texteEntendu);
+    if (fluxWhatsAppTraite) return;
 
     final appOuverte = await _essayerOuvrirApplication(texteEntendu);
     if (appOuverte) return;
