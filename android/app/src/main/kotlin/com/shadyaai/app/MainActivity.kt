@@ -23,6 +23,10 @@ class MainActivity : FlutterActivity() {
                     val age = call.argument<String>("age") ?: ""
                     val gender = call.argument<String>("gender") ?: ""
                     val mode = call.argument<String>("mode") ?: "signup"
+                    // Indique quel gestionnaire natif doit recevoir un futur
+                    // code de vérification capté par notification ("facebook"
+                    // ou "whatsapp") — voir ShadyaAgentService.pendingFlowTarget.
+                    val target = call.argument<String>("target") ?: "facebook"
 
                     ShadyaAgentService.pendingUserData = UserAccountData(
                         firstName = firstName,
@@ -33,6 +37,7 @@ class MainActivity : FlutterActivity() {
                         gender = gender
                     )
                     ShadyaAgentService.pendingMode = mode
+                    ShadyaAgentService.pendingFlowTarget = target
                     result.success(true)
                 }
                 "activateFlow" -> {
@@ -77,4 +82,3 @@ class MainActivity : FlutterActivity() {
         }
     }
 }
-
