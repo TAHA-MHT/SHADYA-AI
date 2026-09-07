@@ -31,6 +31,15 @@ class ShadyaAgentService : AccessibilityService() {
         var pendingMode: String = "signup"
         var pendingOtpCode: String = ""
 
+        // Indique quel flux d'inscription est actuellement en cours
+        // ("facebook" ou "whatsapp") — utilisé pour aiguiller correctement
+        // un code de vérification capté par notification vers le bon
+        // gestionnaire. Avant cet ajout, tout code capté (SMS ou WhatsApp)
+        // était systématiquement transmis à facebookAutomation, quel que
+        // soit le flux réellement actif : un code de vérification WhatsApp
+        // Business aurait été mal aiguillé.
+        var pendingFlowTarget: String = "facebook"
+
         // Indique si un flux d'automatisation est réellement en cours.
         // Sans ce garde-fou, la branche "android" (dialogues système)
         // s'appliquerait à TOUT événement système du téléphone, indéfiniment,
@@ -90,9 +99,14 @@ class ShadyaAgentService : AccessibilityService() {
                         val code = Regex("\\b\\d{5}\\b").find(texteNotification)?.value
                         if (code != null) {
                             pendingOtpCode = code
-                            facebookAutomation.userData = pendingUserData
-                            facebookAutomation.mode = pendingMode
-                            facebookAutomation.tenterRemplirCodeConfirmation(code)
+                            if (pendingFlowTarget == "whatsapp") {
+                                whatsAppAutomation.userData = pendingUserData
+                                whatsAppAutomation.tenterRemplirCodeConfirmation(code)
+                            } else {
+                                facebookAutomation.userData = pendingUserData
+                                facebookAutomation.mode = pendingMode
+                                facebookAutomation.tenterRemplirCodeConfirmation(code)
+                            }
                         } else {
                             journaliserService("Aucun code à 5 chiffres trouvé dans cette notification WhatsApp")
                         }
@@ -125,9 +139,14 @@ class ShadyaAgentService : AccessibilityService() {
                         val code = Regex("\\b\\d{5}\\b").find(texteNotification)?.value
                         if (code != null) {
                             pendingOtpCode = code
-                            facebookAutomation.userData = pendingUserData
-                            facebookAutomation.mode = pendingMode
-                            facebookAutomation.tenterRemplirCodeConfirmation(code)
+                            if (pendingFlowTarget == "whatsapp") {
+                                whatsAppAutomation.userData = pendingUserData
+                                whatsAppAutomation.tenterRemplirCodeConfirmation(code)
+                            } else {
+                                facebookAutomation.userData = pendingUserData
+                                facebookAutomation.mode = pendingMode
+                                facebookAutomation.tenterRemplirCodeConfirmation(code)
+                            }
                         } else {
                             journaliserService("Aucun code à 5 chiffres trouvé dans cette notification SMS")
                         }
@@ -177,4 +196,3 @@ class ShadyaAgentService : AccessibilityService() {
         }
     }
 }
-
