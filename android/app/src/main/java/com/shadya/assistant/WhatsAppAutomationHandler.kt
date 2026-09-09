@@ -57,8 +57,10 @@ class WhatsAppAutomationHandler(private val service: AccessibilityService) {
         )).firstOrNull { noeud ->
             val texte = noeud.text?.toString()?.trim()
             val description = noeud.contentDescription?.toString()?.trim()
-            texte == "Use a different number" || description == "Use a different number" ||
-                texte == "Utiliser un autre numéro" || description == "Utiliser un autre numéro"
+            "Use a different number".equals(texte, ignoreCase = true) ||
+                "Use a different number".equals(description, ignoreCase = true) ||
+                "Utiliser un autre numéro".equals(texte, ignoreCase = true) ||
+                "Utiliser un autre numéro".equals(description, ignoreCase = true)
         }
         if (boutonNumeroDifferent != null) {
             journaliser("WHATSAPP: écran de migration de numéro détecté → clic sur 'Use a different number' (jamais sur le numéro pré-rempli, pour éviter toute fusion avec un compte existant)")
