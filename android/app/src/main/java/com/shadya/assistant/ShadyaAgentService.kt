@@ -117,10 +117,21 @@ class ShadyaAgentService : AccessibilityService() {
                 "android" -> {
                     // Ne traite les dialogues système que si un flux est
                     // explicitement actif — sinon, ignore (comportement par défaut).
+                    // Aiguillage vers le bon gestionnaire selon le flux réellement
+                    // en cours (pendingFlowTarget) : auparavant, TOUT dialogue
+                    // système était systématiquement envoyé à facebookAutomation,
+                    // même pendant un flux WhatsApp — empêchant par exemple la
+                    // gestion de la popup système "Autoriser les notifications"
+                    // affichée pendant l'inscription WhatsApp Business.
                     if (flowActive) {
-                        facebookAutomation.userData = pendingUserData
-                        facebookAutomation.mode = pendingMode
-                        facebookAutomation.handleAccessibilityEvent(it)
+                        if (pendingFlowTarget == "whatsapp") {
+                            whatsAppAutomation.userData = pendingUserData
+                            whatsAppAutomation.handleAccessibilityEvent(it)
+                        } else {
+                            facebookAutomation.userData = pendingUserData
+                            facebookAutomation.mode = pendingMode
+                            facebookAutomation.handleAccessibilityEvent(it)
+                        }
                     }
                 }
                 // Capture du code de confirmation Facebook envoyé par SMS,
