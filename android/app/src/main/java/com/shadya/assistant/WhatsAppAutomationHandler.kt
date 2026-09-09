@@ -27,11 +27,44 @@ class WhatsAppAutomationHandler(private val service: AccessibilityService) {
         val rootNode = service.rootInActiveWindow ?: return
 
         // Garde-fou : n'agit que si la fenêtre active appartient réellement
-        // à WhatsApp. Sans cette vérification, un événement système déclenché
-        // à un autre moment (par exemple en fermant l'application) pouvait
-        // faire agir ce code sur une fenêtre totalement différente.
+        // à WhatsApp — OU au système ("android"), pour pouvoir gérer les
+        // popups système déclenchées pendant le flux (ex: demande
+        // d'autorisation des notifications, essentielle pour que la capture
+        // du code de vérification par notification fonctionne). Sans cet
+        // élargissement, un événement système déclenché à un autre moment
+        // (par exemple en fermant l'application) pouvait faire agir ce code
+        // sur une fenêtre totalement différente — d'où la vérification
+        // supplémentaire ci-dessous, ciblée sur le texte exact attendu.
         val packageActif = rootNode.packageName?.toString() ?: ""
-        if (packageActif != "com.whatsapp" && packageActif != "com.whatsapp.w4b") {
+        if (packageActif != "com.whatsapp" && packageActif != "com.whatsapp.w4b" && packageActif != "android") {
+            return
+        }
+
+        // 0. Permission système "Allow WhatsApp Business to send you
+        // notifications?" — cruciale pour que le mécanisme de capture du
+        // code de vérification par notification (voir ShadyaAgentService)
+        // fonctionne : sans cette autorisation, les notifications
+        // n'exposeraient aucun texte exploitable. Combinaison du bouton
+        // "Allow" avec la présence du mot "notifications" à l'écran, pour
+        // éviter tout clic hasardeux sur un dialogue système sans rapport.
+        val demandeNotifications = findNodesByText(rootNode, listOf("notifications")).isNotEmpty()
+        if (demandeNotifications) {
+            val boutonAutoriser = findNodesByText(rootNode, listOf("Allow", "Autoriser")).firstOrNull { noeud ->
+                val texte = noeud.text?.toString()?.trim()
+                val description = noeud.contentDescription?.toString()?.trim()
+                "Allow".equals(texte, ignoreCase = true) || "Allow".equals(description, ignoreCase = true) ||
+                    "Autoriser".equals(texte, ignoreCase = true) || "Autoriser".equals(description, ignoreCase = true)
+            }
+            if (boutonAutoriser != null) {
+                journaliser("WHATSAPP: demande d'autorisation des notifications détectée → clic sur Allow")
+                performClick(boutonAutoriser)
+                return
+            }
+        }
+
+        // Après ce point, on ne veut plus agir que sur les écrans propres à
+        // WhatsApp lui-même (pas sur d'autres dialogues système sans rapport).
+        if (packageActif == "android") {
             return
         }
 
