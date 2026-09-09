@@ -103,6 +103,16 @@ class WhatsAppAutomationHandler(private val service: AccessibilityService) {
             clickNextButton(rootNode)
             return
         }
+
+        // DIAGNOSTIC : aucun des blocs ci-dessus n'a reconnu l'écran actuel.
+        // Contrairement à FacebookAutomationHandler, ce gestionnaire n'a
+        // pas de filet de sécurité générique (pas de clic automatique sur
+        // "Next" en dernier recours) — un écran non reconnu ici reste donc
+        // silencieux, sans laisser aucune trace exploitable. On journalise
+        // désormais tout le contenu textuel de l'écran dans ce cas, une
+        // seule fois par écran réellement différent, pour ne plus jamais
+        // rester aveugle face à un blocage.
+        journaliserContenuEcranSiNouveau(rootNode)
     }
 
     // Appelée directement par ShadyaAgentService dès qu'un code de
@@ -225,5 +235,37 @@ class WhatsAppAutomationHandler(private val service: AccessibilityService) {
             // Le journal est un outil de diagnostic, pas critique au flux.
         }
     }
-}
 
+    // Empreinte du dernier écran dont le contenu complet a été journalisé —
+    // évite de ré-écrire le même dump à chaque événement d'accessibilité
+    // reçu sur un même écran figé.
+    private var derniereEmpreinteEcranJournalisee: Int? = null
+
+    private fun journaliserContenuEcranSiNouveau(rootNode: AccessibilityNodeInfo) {
+        val lignes = mutableListOf<String>()
+        collecterContenuTexte(rootNode, lignes)
+        val empreinte = lignes.joinToString("|").hashCode()
+        if (empreinte == derniereEmpreinteEcranJournalisee) return
+        derniereEmpreinteEcranJournalisee = empreinte
+
+        journaliser("=== WHATSAPP DUMP ÉCRAN NON RECONNU (${lignes.size} nœud(s) avec texte) ===")
+        for (ligne in lignes) {
+            journaliser(ligne)
+        }
+        journaliser("=== FIN DUMP ===")
+    }
+
+    private fun collecterContenuTexte(node: AccessibilityNodeInfo?, resultat: MutableList<String>) {
+        if (node == null) return
+        val texte = node.text?.toString()
+        val description = node.contentDescription?.toString()
+        if (!texte.isNullOrBlank() || !description.isNullOrBlank()) {
+            val zone = android.graphics.Rect()
+            node.getBoundsInScreen(zone)
+            resultat.add("classe=${node.className}, clicable=${node.isClickable}, checkable=${node.isCheckable}, checked=${node.isChecked}, texte=\"$texte\", desc=\"$description\", bornes=(${zone.left},${zone.top},${zone.right},${zone.bottom})")
+        }
+        for (i in 0 until node.childCount) {
+            collecterContenuTexte(node.getChild(i), resultat)
+        }
+    }
+}
