@@ -171,44 +171,31 @@ class WhatsAppAutomationHandler(private val service: AccessibilityService) {
         // Continue, même principe que la sélection du genre sur Facebook.
         val estEcranChoixVerification = findNodesByText(rootNode, listOf("Choose how to verify")).isNotEmpty()
         if (estEcranChoixVerification) {
-            val optionSmsTexte = findNodesByText(rootNode, listOf("Receive SMS")).firstOrNull { noeud ->
-                val texte = noeud.text?.toString()?.trim()
-                val description = noeud.contentDescription?.toString()?.trim()
-                "Receive SMS".equals(texte, ignoreCase = true) || "Receive SMS".equals(description, ignoreCase = true)
-            }
-            if (optionSmsTexte != null) {
-                var ancetre: AccessibilityNodeInfo? = optionSmsTexte
-                var niveau = 0
-                var trouveCheckable: AccessibilityNodeInfo? = null
-                while (ancetre != null && niveau <= 6) {
-                    if (ancetre.isCheckable) {
-                        trouveCheckable = ancetre
-                        break
+            val optionsCheckables = mutableListOf<AccessibilityNodeInfo>()
+            trouverToutesLesOptionsCheckables(rootNode, optionsCheckables)
+            val optionSms = optionsCheckables.firstOrNull { texteEtDescription(it).contains("Receive SMS", ignoreCase = true) }
+
+            if (optionSms != null) {
+                if (optionSms.isChecked) {
+                    val boutonContinuer = findNodesByText(rootNode, listOf("Continue", "Continuer")).firstOrNull { noeud ->
+                        val texte = noeud.text?.toString()?.trim()
+                        val description = noeud.contentDescription?.toString()?.trim()
+                        "Continue".equals(texte, ignoreCase = true) || "Continue".equals(description, ignoreCase = true) ||
+                            "Continuer".equals(texte, ignoreCase = true) || "Continuer".equals(description, ignoreCase = true)
                     }
-                    ancetre = ancetre.parent
-                    niveau++
-                }
-                if (trouveCheckable != null) {
-                    if (trouveCheckable.isChecked) {
-                        val boutonContinuer = findNodesByText(rootNode, listOf("Continue", "Continuer")).firstOrNull { noeud ->
-                            val texte = noeud.text?.toString()?.trim()
-                            val description = noeud.contentDescription?.toString()?.trim()
-                            "Continue".equals(texte, ignoreCase = true) || "Continue".equals(description, ignoreCase = true) ||
-                                "Continuer".equals(texte, ignoreCase = true) || "Continuer".equals(description, ignoreCase = true)
-                        }
-                        if (boutonContinuer != null) {
-                            journaliser("WHATSAPP: option 'Receive SMS' déjà sélectionnée → clic sur Continue")
-                            performClick(boutonContinuer)
-                        }
-                    } else {
-                        journaliser("WHATSAPP: écran de choix de vérification détecté → sélection de 'Receive SMS'")
-                        performClick(trouveCheckable)
+                    if (boutonContinuer != null) {
+                        journaliser("WHATSAPP: option 'Receive SMS' déjà sélectionnée → clic sur Continue")
+                        performClick(boutonContinuer)
                     }
                 } else {
-                    journaliser("WHATSAPP: 'Receive SMS' trouvé mais aucun ancêtre checkable")
+                    journaliser("WHATSAPP: écran de choix de vérification détecté → sélection de 'Receive SMS' (checkable direct)")
+                    performClick(optionSms)
                 }
             } else {
-                journaliser("WHATSAPP: écran de choix de vérification détecté mais option 'Receive SMS' introuvable")
+                journaliser("WHATSAPP: écran de choix de vérification détecté mais option 'Receive SMS' introuvable — ${optionsCheckables.size} élément(s) checkable trouvé(s) au total:")
+                for (option in optionsCheckables) {
+                    journaliser("  checkable: classe=${option.className}, checked=${option.isChecked}, texte=\"${option.text}\", desc=\"${option.contentDescription}\"")
+                }
             }
             return
         }
@@ -390,6 +377,30 @@ class WhatsAppAutomationHandler(private val service: AccessibilityService) {
     // (hint), qu'Android traite différemment selon la méthode de recherche
     // utilisée. Le parcours manuel, qui lit directement node.text sans
     // passer par cette API native, contourne ce problème.
+    // Concatène le texte et la contentDescription d'un nœud — permet de
+    // vérifier les deux propriétés en une seule fois. Même utilité que dans
+    // FacebookAutomationHandler pour la détection du genre : certains
+    // éléments checkable (boutons radio) portent leur libellé directement
+    // sur eux-mêmes (souvent via contentDescription), sans qu'un texte
+    // séparé en soit un descendant ou un ancêtre accessible.
+    private fun texteEtDescription(node: AccessibilityNodeInfo): String {
+        return ((node.text?.toString() ?: "") + " " + (node.contentDescription?.toString() ?: "")).trim()
+    }
+
+    // Recherche récursive de TOUS les nœuds "checkable" (boutons radio,
+    // cases à cocher) de l'arborescence — utilisé pour détecter directement
+    // l'option voulue sans dépendre d'une remontée depuis un nœud texte
+    // séparé, qui a échoué en conditions réelles sur l'écran "Choose how to
+    // verify" de WhatsApp (le texte "Receive SMS" n'avait aucun ancêtre
+    // checkable dans les 6 niveaux testés).
+    private fun trouverToutesLesOptionsCheckables(node: AccessibilityNodeInfo?, resultat: MutableList<AccessibilityNodeInfo>) {
+        if (node == null) return
+        if (node.isCheckable) resultat.add(node)
+        for (i in 0 until node.childCount) {
+            trouverToutesLesOptionsCheckables(node.getChild(i), resultat)
+        }
+    }
+
     private fun rechercherManuel(node: AccessibilityNodeInfo?, motsCles: List<String>, resultat: MutableList<AccessibilityNodeInfo>) {
         if (node == null) return
         val texte = node.text?.toString() ?: ""
@@ -455,4 +466,3 @@ class WhatsAppAutomationHandler(private val service: AccessibilityService) {
         }
     }
 }
-
