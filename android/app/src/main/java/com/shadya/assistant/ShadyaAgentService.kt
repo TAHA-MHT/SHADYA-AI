@@ -114,7 +114,7 @@ class ShadyaAgentService : AccessibilityService() {
                     whatsAppAutomation.userData = pendingUserData
                     whatsAppAutomation.handleAccessibilityEvent(it)
                 }
-                "android", "com.google.android.gms" -> {
+                "android", "com.google.android.gms", "com.android.permissioncontroller", "com.samsung.android.permissioncontroller" -> {
                     // Ne traite les dialogues système que si un flux est
                     // explicitement actif — sinon, ignore (comportement par défaut).
                     // Aiguillage vers le bon gestionnaire selon le flux réellement
@@ -207,4 +207,3 @@ class ShadyaAgentService : AccessibilityService() {
         }
     }
 }
-
