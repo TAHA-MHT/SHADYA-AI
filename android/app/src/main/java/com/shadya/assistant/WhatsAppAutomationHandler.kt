@@ -37,7 +37,8 @@ class WhatsAppAutomationHandler(private val service: AccessibilityService) {
         // supplémentaires ci-dessous, ciblées sur des textes exacts attendus.
         val packageActif = rootNode.packageName?.toString() ?: ""
         if (packageActif != "com.whatsapp" && packageActif != "com.whatsapp.w4b" &&
-            packageActif != "android" && packageActif != "com.google.android.gms") {
+            packageActif != "android" && packageActif != "com.google.android.gms" &&
+            packageActif != "com.android.permissioncontroller" && packageActif != "com.samsung.android.permissioncontroller") {
             return
         }
 
@@ -89,7 +90,7 @@ class WhatsAppAutomationHandler(private val service: AccessibilityService) {
 
         // Après ce point, on ne veut plus agir que sur les écrans propres à
         // WhatsApp lui-même (pas sur d'autres dialogues système sans rapport).
-        if (packageActif == "android" || packageActif == "com.google.android.gms") {
+        if (packageActif == "android" || packageActif == "com.google.android.gms" || packageActif == "com.android.permissioncontroller" || packageActif == "com.samsung.android.permissioncontroller") {
             return
         }
 
@@ -516,4 +517,3 @@ class WhatsAppAutomationHandler(private val service: AccessibilityService) {
         }
     }
 }
-
