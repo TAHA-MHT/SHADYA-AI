@@ -1,11 +1,1 @@
-<accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
-    android:accessibilityEventTypes="typeAllMask"
-    android:accessibilityFeedbackType="feedbackGeneric"
-    android:accessibilityFlags="flagDefault|flagRetrieveInteractiveWindows|flagIncludeNotImportantViews|flagReportViewIds"
-    android:canRetrieveWindowContent="true"
-    android:canPerformGestures="true"
-    android:canRequestFilterKeyEvents="false"
-    android:notificationTimeout="100"
-    android:description="@string/accessibility_service_description"
-    android:settingsActivity="com.shadyaai.app.MainActivity" />
 
