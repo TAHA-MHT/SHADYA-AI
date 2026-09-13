@@ -274,6 +274,28 @@ class WhatsAppAutomationHandler(private val service: AccessibilityService) {
             return
         }
 
+        // 3bis. Écran "Verified" — confirme que le numéro a été vérifié
+        // automatiquement (sans code à saisir, ex: vérification silencieuse
+        // via l'appareil). On clique sur "Continue" pour poursuivre.
+        val estEcranVerified = findNodesByText(rootNode, listOf(
+            "Your number has been securely verified", "numéro a été vérifié en toute sécurité"
+        )).isNotEmpty()
+        if (estEcranVerified) {
+            val boutonContinuerVerified = findNodesByText(rootNode, listOf("Continue", "Continuer")).firstOrNull { noeud ->
+                val texte = noeud.text?.toString()?.trim()
+                val description = noeud.contentDescription?.toString()?.trim()
+                "Continue".equals(texte, ignoreCase = true) || "Continue".equals(description, ignoreCase = true) ||
+                    "Continuer".equals(texte, ignoreCase = true) || "Continuer".equals(description, ignoreCase = true)
+            }
+            if (boutonContinuerVerified != null) {
+                journaliser("WHATSAPP: écran 'Verified' détecté → clic sur Continue")
+                performClick(boutonContinuerVerified)
+            } else {
+                journaliser("WHATSAPP: écran 'Verified' détecté mais bouton Continue introuvable")
+            }
+            return
+        }
+
         // 4bis. Écran "Allow access" (Contacts, Media) — apparaît
         // généralement juste après la vérification du numéro. On clique sur
         // "Skip" plutôt que "Continue" pour éviter d'enchaîner sur d'autres
@@ -517,4 +539,3 @@ class WhatsAppAutomationHandler(private val service: AccessibilityService) {
         }
     }
 }
-
