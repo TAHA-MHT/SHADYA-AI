@@ -6,7 +6,24 @@ import android.os.Handler
 import android.os.Looper
 import android.view.accessibility.AccessibilityEvent
 
-
+data class UserAccountData(
+    val firstName: String = "",
+    val lastName: String = "",
+    val phone: String = "",
+    val password: String = "",
+    // Nom d'entreprise dicté par l'utilisateur, utilisé pour remplir
+    // automatiquement le champ "Business name" lors de la création du
+    // profil WhatsApp Business.
+    val businessName: String = "",
+    // Âge dicté par l'utilisateur, utilisé pour calculer précisément
+    // l'année de naissance à sélectionner sur l'écran "date of birth"
+    // de Facebook (voir FacebookAutomationHandler.ajusterMoletteAnnee).
+    val age: String = "",
+    // Genre dicté par l'utilisateur ("Male" ou "Female"), utilisé pour
+    // sélectionner automatiquement la bonne option sur l'écran
+    // "What's your gender?" de Facebook.
+    val gender: String = ""
+)
 
 class ShadyaAgentService : AccessibilityService() {
 
