@@ -258,7 +258,7 @@ class WhatsAppAutomationHandler(private val service: AccessibilityService) {
         // contient qu'un seul champ de saisie, ce qui rend ce repli sûr.
         
        val estEcranBusinessProfile = findNodesByText(rootNode, listOf("Create your business profile")).isNotEmpty()
-        journaliser("DIAGNOSTIC BUSINESS: estEcranBusinessProfile=$estEcranBusinessProfile")
+               journaliser("DIAGNOSTIC BUSINESS: estEcranBusinessProfile=$estEcranBusinessProfile")
             var champBusinessName = findFieldsByHint(rootNode, listOf("Business name")).firstOrNull()
             if (champBusinessName == null) {
                 val tousLesChamps = mutableListOf<AccessibilityNodeInfo>()
