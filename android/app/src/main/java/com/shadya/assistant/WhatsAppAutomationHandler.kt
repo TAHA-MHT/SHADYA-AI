@@ -295,6 +295,32 @@ class WhatsAppAutomationHandler(private val service: AccessibilityService) {
             }
             return
         }
+        
+        // 3ter. Écran de restauration de sauvegarde Google — "If you
+        // previously backed up to Google storage and want to restore it,
+        // give WhatsApp permission to check your Google account for
+        // backups." On clique systématiquement sur "Skip" (jamais "Give
+        // permission") pour repartir sur un compte neuf, sans tenter de
+        // restaurer une sauvegarde existante qui ne correspondrait pas au
+        // nouveau numéro utilisé par Shadya.
+        val estEcranRestaurationGoogle = findNodesByText(rootNode, listOf(
+            "previously backed up to Google storage", "sauvegardé précédemment sur Google"
+        )).isNotEmpty()
+        if (estEcranRestaurationGoogle) {
+            val boutonSkipRestauration = findNodesByText(rootNode, listOf("Skip", "Ignorer")).firstOrNull { noeud ->
+                val texte = noeud.text?.toString()?.trim()
+                val description = noeud.contentDescription?.toString()?.trim()
+                "Skip".equals(texte, ignoreCase = true) || "Skip".equals(description, ignoreCase = true) ||
+                    "Ignorer".equals(texte, ignoreCase = true) || "Ignorer".equals(description, ignoreCase = true)
+            }
+            if (boutonSkipRestauration != null) {
+                journaliser("WHATSAPP: écran de restauration de sauvegarde Google détecté → clic sur Skip")
+                performClick(boutonSkipRestauration)
+            } else {
+                journaliser("WHATSAPP: écran de restauration Google détecté mais bouton Skip introuvable")
+            }
+            return
+        }
 
         // 4bis. Écran "Allow access" (Contacts, Media) — apparaît
         // généralement juste après la vérification du numéro. On clique sur
