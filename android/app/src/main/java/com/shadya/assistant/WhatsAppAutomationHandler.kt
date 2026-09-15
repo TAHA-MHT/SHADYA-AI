@@ -25,6 +25,7 @@ class WhatsAppAutomationHandler(private val service: AccessibilityService) {
 
     fun handleAccessibilityEvent(event: AccessibilityEvent) {
         val rootNode = service.rootInActiveWindow ?: return
+        journaliser("VERSION TEST 999 - build actif")
 
         val packageActif = rootNode.packageName?.toString() ?: ""
         if (packageActif != "com.whatsapp" && packageActif != "com.whatsapp.w4b" &&
