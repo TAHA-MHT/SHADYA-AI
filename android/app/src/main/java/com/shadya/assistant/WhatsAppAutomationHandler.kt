@@ -256,8 +256,7 @@ class WhatsAppAutomationHandler(private val service: AccessibilityService) {
         // hint peut échouer. Repli sur le premier champ éditable trouvé à
         // l'écran si la recherche par hint ne donne rien — cet écran ne
         // contient qu'un seul champ de saisie, ce qui rend ce repli sûr.
-        
-       val estEcranBusinessProfile = findNodesByText(rootNode, listOf("Create your business profile")).isNotEmpty()
+        val estEcranBusinessProfile = findNodesByText(rootNode, listOf("Create your business profile")).isNotEmpty()
                journaliser("DIAGNOSTIC BUSINESS: estEcranBusinessProfile=$estEcranBusinessProfile")
             var champBusinessName = findFieldsByHint(rootNode, listOf("Business name")).firstOrNull()
             if (champBusinessName == null) {
